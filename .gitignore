@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+build-output/
+build-temp/
+dist/*.zip
+*.spec
+signal_state.json
+signal_alerts.csv
+watchlist.json
+positions.json
+risk_settings.json
+stock_names.json
+data_provider.txt
+*.log
