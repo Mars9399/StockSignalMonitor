@@ -14,3 +14,9 @@ risk_settings.json
 stock_names.json
 data_provider.txt
 *.log
+.DS_Store
+apple/.build/
+apple/.derivedData/
+apple/StockSignalMonitorApple.xcodeproj/
+apple/*.xcworkspace/
+xcuserdata/
