@@ -24,6 +24,7 @@ final class MacMonitorStore {
     private let backend: any MonitoringBackend
     private let twsPositionClient = TWSPositionClient()
     private var monitoringTask: Task<Void, Never>?
+    private var monitoringGeneration = UUID()
     private let defaults: UserDefaults
 
     init(
@@ -78,6 +79,8 @@ final class MacMonitorStore {
 
         let provider = preferences.providerConfiguration(credentials: credentials)
         let risk = preferences.riskConfiguration
+        let generation = UUID()
+        monitoringGeneration = generation
         monitoringTask = Task { [weak self, backend] in
             guard let self else { return }
             do {
@@ -85,6 +88,7 @@ final class MacMonitorStore {
                     connectionMessage = "正在从 TWS 同步只读持仓…"
                     try await importTWSPositions()
                 }
+                try Task.checkCancellation()
                 let stream = try await backend.updates(
                     symbols: watchlist,
                     provider: provider,
@@ -106,16 +110,21 @@ final class MacMonitorStore {
                 connectionMessage = "连接失败"
                 log("连接错误：\(error.localizedDescription)")
             }
-            isMonitoring = false
+            if monitoringGeneration == generation { isMonitoring = false }
         }
     }
 
     func stopMonitoring() {
         guard isMonitoring else { return }
         monitoringTask?.cancel()
+        monitoringGeneration = UUID()
         monitoringTask = nil
         isMonitoring = false
         connectionMessage = "已停止"
+        for index in signals.indices {
+            signals[index].action = "仅观察：监控已停止"
+            signals[index].status = .noSignal
+        }
         log("监控已停止")
         backend.stop()
     }
@@ -194,7 +203,7 @@ final class MacMonitorStore {
     private func restartIfNeeded() {
         guard isMonitoring else { return }
         stopMonitoring()
-        startMonitoring()
+        startMonitoring(syncTWSPositions: false)
     }
 
     private func persistWatchlist() {
@@ -219,6 +228,10 @@ final class MacMonitorStore {
             clientID: preferences.twsClientID
         )
         let requestedAccount = preferences.twsAccountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        try Task.checkCancellation()
+        if !requestedAccount.isEmpty && !snapshots.isEmpty && !snapshots.contains(where: { $0.account.caseInsensitiveCompare(requestedAccount) == .orderedSame }) {
+            throw NSError(domain: "TWS", code: 1, userInfo: [NSLocalizedDescriptionKey: "未找到指定账户，已保留原有持仓"])
+        }
         let scoped = requestedAccount.isEmpty
             ? snapshots
             : snapshots.filter { $0.account.caseInsensitiveCompare(requestedAccount) == .orderedSame }
@@ -244,6 +257,7 @@ final class MacMonitorStore {
         }
 
         let importedKey = "twsImportedSymbols"
+        let oldPositions = positions
         let previouslyImported = Set(defaults.stringArray(forKey: importedKey) ?? [])
         for symbol in previouslyImported { positions.removeValue(forKey: symbol) }
 
@@ -251,7 +265,10 @@ final class MacMonitorStore {
         for (symbol, total) in totals where total.quantity > 0 {
             positions[symbol] = PositionInput(
                 averageCost: total.weightedCost / total.quantity,
-                quantity: total.quantity
+                quantity: total.quantity,
+                initialStop: oldPositions[symbol].flatMap {
+                    abs($0.averageCost - total.weightedCost / total.quantity) < 0.000001 && $0.quantity == total.quantity ? $0.initialStop : nil
+                }
             )
             if !watchlist.contains(symbol) {
                 watchlist.append(symbol)

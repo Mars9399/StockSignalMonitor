@@ -97,4 +97,7 @@ def merge_positions(current, snapshots, previously_imported, account=""):
     result = {symbol: value for symbol, value in current.items() if symbol not in previously_imported}
     for symbol, total in totals.items():
         result[symbol] = {"quantity": total["quantity"], "avg_cost": total["weighted_cost"] / total["quantity"]}
+        old = current.get(symbol, {})
+        if old.get("quantity") == total["quantity"] and abs(old.get("avg_cost", 0) - result[symbol]["avg_cost"]) < 0.000001 and old.get("initial_stop") is not None:
+            result[symbol]["initial_stop"] = old["initial_stop"]
     return result, sorted(totals), skipped

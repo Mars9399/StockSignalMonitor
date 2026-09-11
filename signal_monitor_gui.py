@@ -23,6 +23,7 @@ from data_providers import AlpacaWorker, IBKRWorker, MassiveWorker, ProviderWork
 import signal_monitor as signal_core
 from signal_monitor import calculate_levels, load_state, record_alert, save_state, send_discord
 from tws_positions import fetch_positions, merge_positions
+from reliability import observation_reason, NEW_YORK
 
 
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
@@ -85,6 +86,7 @@ def read_positions() -> dict[str, dict[str, float]]:
             str(symbol).upper(): {
                 "avg_cost": max(0.0, float(values.get("avg_cost", 0))),
                 "quantity": max(0.0, float(values.get("quantity", 0))),
+                "initial_stop": values.get("initial_stop"),
             }
             for symbol, values in raw.items()
             if isinstance(values, dict)
@@ -179,13 +181,12 @@ def build_position_plan(
     quantity = float(position.get("quantity", 0))
     avg_cost = float(position.get("avg_cost", 0))
 
-    # A held position uses a volatility-aware trailing risk line that always
-    # remains below the current market price. A new position uses entry_stop.
     if quantity > 0 and avg_cost > 0:
-        trailing_candidate = max(price - 2 * atr, sma50 if sma50 < price else 0.01)
-        position_stop = min(trailing_candidate, price - 0.5 * atr)
-        position_stop = max(0.01, position_stop)
-        initial_risk = max(avg_cost - position_stop, atr)
+        position_stop = position.get("initial_stop")
+        if not isinstance(position_stop, (int, float)) or not math.isfinite(position_stop) or not 0 < position_stop < avg_cost:
+            return dict(position_stop=0, target_2r=0, target_3r=0, max_shares=0,
+                        action="请设置初始风险线；暂停仓位建议")
+        initial_risk = avg_cost - position_stop
         target_2r = avg_cost + 2 * initial_risk
         target_3r = avg_cost + 3 * initial_risk
         sizing_price = price
@@ -253,6 +254,8 @@ class SignalMonitorApp:
         self.stock_names = read_stock_names()
         self.last_log_at: dict[str, float] = {}
         self.last_logged_status: dict[str, str] = {}
+        self.quote_times = {}
+        self.history_loaded_day = datetime.now(NEW_YORK).date()
         load_dotenv(BASE_DIR / ".env")
         self.provider_var = tk.StringVar(value=read_provider())
         self.feed_var = tk.StringVar(value=self.provider_var.get())
@@ -264,6 +267,7 @@ class SignalMonitorApp:
         self._populate_symbols()
         self._resolve_missing_names(self.symbols)
         self.root.after(100, self._process_events)
+        self.root.after(15000, self._check_freshness)
 
     def _configure_style(self) -> None:
         self.root.configure(bg="#0b1220")
@@ -355,6 +359,9 @@ class SignalMonitorApp:
 
         actions = ttk.Frame(outer, style="Card.TFrame", padding=8)
         actions.pack(fill="x", pady=(0, 8))
+        ttk.Label(actions, text="所选股票初始风险线", style="Card.TLabel").pack(side="left")
+        self.initial_stop_entry = self._dark_entry(actions, 8)
+        self.initial_stop_entry.pack(side="left", padx=5)
         for label, scope in (("显示全部", "all"), ("只显示持仓", "positions")):
             ttk.Radiobutton(actions, text=label, variable=self.scope_var, value=scope,
                             command=self._apply_scope).pack(side="left", padx=6)
@@ -510,7 +517,7 @@ class SignalMonitorApp:
                 values=(symbol, self.stock_names.get(symbol, "查询中…"), "—", "—", "—", f"${avg_cost:,.2f}" if avg_cost else "—", f"{quantity:g}" if quantity else "—", "—", "待启动", "—", "—", "—"),
             )
             if symbol in self.levels:
-                self._render_row(symbol, self.levels[symbol]["price"], "—")
+                self._render_row(symbol, self.levels[symbol]["price"], self.quote_times.get(symbol))
         self._apply_scope()
         self._refresh_watchlist()
 
@@ -618,6 +625,7 @@ class SignalMonitorApp:
         self._populate_symbols()
         self.avg_cost_entry.delete(0, "end")
         self.quantity_entry.delete(0, "end")
+        self.initial_stop_entry.delete(0, "end")
         self.tws_message.set("本地持仓已清除")
 
     def add_symbol(self) -> None:
@@ -661,6 +669,9 @@ class SignalMonitorApp:
         self.selected_symbol_var.set(f"所选：{symbol}")
         self.avg_cost_entry.delete(0, "end")
         self.quantity_entry.delete(0, "end")
+        self.initial_stop_entry.delete(0, "end")
+        if position.get("initial_stop"):
+            self.initial_stop_entry.insert(0, str(position["initial_stop"]))
         if float(position.get("avg_cost", 0)) > 0:
             self.avg_cost_entry.insert(0, f"{float(position['avg_cost']):.4f}")
         if float(position.get("quantity", 0)) > 0:
@@ -675,21 +686,25 @@ class SignalMonitorApp:
         try:
             avg_cost = float(self.avg_cost_entry.get().strip() or "0")
             quantity = float(self.quantity_entry.get().strip() or "0")
+            raw_stop = self.initial_stop_entry.get().strip()
+            initial_stop = float(raw_stop) if raw_stop else None
+            if initial_stop is not None and (not math.isfinite(initial_stop) or not 0 < initial_stop < avg_cost):
+                raise ValueError
             if not math.isfinite(avg_cost) or not math.isfinite(quantity) or avg_cost < 0 or quantity < 0 or (quantity > 0 and avg_cost <= 0):
                 raise ValueError
         except ValueError:
-            messagebox.showwarning("持仓输入无效", "均价必须大于0，股数必须是非负数（支持碎股）；清仓可把两项都填0。")
+            messagebox.showwarning("持仓输入无效", "均价必须大于0，股数非负；初始风险线必须低于成本，留空仅观察。保存风险线后固定 R 和目标；提示不代表已执行。")
             return
 
         if quantity == 0:
             self.positions.pop(symbol, None)
         else:
-            self.positions[symbol] = {"avg_cost": avg_cost, "quantity": quantity}
+            self.positions[symbol] = {"avg_cost": avg_cost, "quantity": quantity, "initial_stop": initial_stop}
         write_positions(self.positions)
         self._apply_scope()
         self._refresh_watchlist()
         if symbol in self.levels:
-            self._render_row(symbol, float(self.levels[symbol]["price"]), datetime.now().astimezone())
+            self._render_row(symbol, float(self.levels[symbol]["price"]), self.quote_times.get(symbol))
         else:
             self._populate_symbols()
             self.tree.selection_set(symbol)
@@ -713,7 +728,7 @@ class SignalMonitorApp:
         }
         write_risk_settings(self.risk_settings)
         for symbol, values in self.levels.items():
-            self._render_row(symbol, float(values["price"]), datetime.now().astimezone())
+            self._render_row(symbol, float(values["price"]), self.quote_times.get(symbol))
         self._append_log(
             f"风控已保存：账户 ${account_value:,.0f}，单笔风险 {risk_pct:g}%，单股资金上限 {max_position_pct:g}%。"
         )
@@ -764,6 +779,8 @@ class SignalMonitorApp:
             return
 
         self.levels.clear()
+        self.quote_times.clear()
+        self.history_loaded_day = datetime.now(NEW_YORK).date()
         self.running = True
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
@@ -789,6 +806,8 @@ class SignalMonitorApp:
         self.stop_button.configure(state="disabled")
         self.provider_combo.configure(state="readonly")
         self.connection_var.set("已停止")
+        for symbol, values in list(self.levels.items()):
+            self._render_row(symbol, float(values['price']), self.quote_times.get(symbol))
         if self.pending_tws_start:
             self.pending_tws_start = False
             self.root.after(0, lambda: self.start_monitoring(sync_tws=False))
@@ -836,6 +855,7 @@ class SignalMonitorApp:
 
     def _apply_snapshot(self, symbol: str, values: dict, timestamp) -> None:
         self.levels[symbol] = values
+        self.quote_times[symbol] = timestamp
         self._render_row(symbol, float(values["price"]), timestamp)
         if values["status"] == "BUY_ALERT":
             self._trigger_alert(symbol, values)
@@ -844,6 +864,7 @@ class SignalMonitorApp:
         if symbol not in self.levels:
             return
         values = self.levels[symbol]
+        self.quote_times[symbol] = timestamp
         old_status = str(values["status"])
         signal_ready = bool(values.get("signal_ready", True))
         trend_ok = (
@@ -874,6 +895,10 @@ class SignalMonitorApp:
                 self.risk_settings["risk_pct"],
                 self.risk_settings["max_position_pct"],
             )
+            reason = observation_reason(price, timestamp, values.get("history_date"))
+            if reason:
+                plan["action"] = f"仅观察：{reason}"
+                status_text = "仅观察"
             if signal_ready:
                 log_text = (
                     f"行情 {symbol} {self.stock_names.get(symbol, '')} | ${price:,.2f} | "
@@ -905,16 +930,22 @@ class SignalMonitorApp:
             self.risk_settings["risk_pct"],
             self.risk_settings["max_position_pct"],
         )
+        reason = observation_reason(price, timestamp, values.get("history_date"))
+        if not self.running:
+            reason = "监控已停止"
+        if reason:
+            status_text, status_tag = "仅观察", "DATA_SHORT"
+            plan["action"] = f"仅观察：{reason}"
         if hasattr(timestamp, "astimezone"):
             updated = timestamp.astimezone().strftime("%Y-%m-%d %H:%M:%S")
         else:
             updated = str(timestamp)
         signal_ready = bool(values.get("signal_ready", True))
         buy_text = f"${float(values['buy_point']):,.2f}" if signal_ready else "—"
-        stop_text = f"${float(plan['position_stop']):,.2f}" if signal_ready else "—"
+        stop_text = f"${float(plan['position_stop']):,.2f}" if signal_ready and plan['position_stop'] > 0 else "—"
         sell_text = (
             f"${float(plan['target_2r']):,.2f} / ${float(plan['target_3r']):,.2f}"
-            if signal_ready else "—"
+            if signal_ready and plan['target_2r'] > 0 else "—"
         )
         quality_text = (
             f"{values.get('signal_quality', '标准')} · {int(values.get('history_days', 0))}日 · "
@@ -939,6 +970,13 @@ class SignalMonitorApp:
         self._refresh_watchlist()
 
     def _trigger_alert(self, symbol: str, values: dict) -> None:
+        if observation_reason(float(values['price']), self.quote_times.get(symbol), values.get('history_date')):
+            return
+        position = self.positions.get(symbol, {})
+        if position.get("quantity", 0) > 0:
+            stop = position.get("initial_stop")
+            if stop is None or not 0 < stop < position.get("avg_cost", 0):
+                return
         now = datetime.now(timezone.utc)
         alert_key = f"{symbol}:{now.date().isoformat()}"
         if self.alert_state.get(symbol) == alert_key:
@@ -961,6 +999,8 @@ class SignalMonitorApp:
             self.events.put(("connection", f"Discord 提示发送失败：{exc}"))
 
     def _show_symbol_error(self, symbol: str, error: str) -> None:
+        self.levels.pop(symbol, None)
+        self.quote_times.pop(symbol, None)
         if self.tree.exists(symbol):
             position = self.positions.get(symbol, {})
             quantity = float(position.get("quantity", 0))
@@ -984,6 +1024,15 @@ class SignalMonitorApp:
         if self.worker is not None:
             self.worker.stop()
         self.root.destroy()
+
+    def _check_freshness(self):
+        for symbol, values in list(self.levels.items()):
+            self._render_row(symbol, float(values['price']), self.quote_times.get(symbol))
+        if self.running and self.history_loaded_day != datetime.now(NEW_YORK).date():
+            self.pending_tws_start = True
+            self.history_loaded_day = datetime.now(NEW_YORK).date()
+            self.stop_monitoring()
+        self.root.after(15000, self._check_freshness)
 
 
 def main() -> None:

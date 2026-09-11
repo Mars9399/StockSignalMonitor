@@ -12,7 +12,8 @@ let package = Package(
         .testTarget(
             name: "StockSignalCoreTests",
             dependencies: ["StockSignalCore"],
-            path: "Tests/SharedTests"
+            path: "Tests/SharedTests",
+            resources: [.copy("Fixtures")]
         )
     ]
 )

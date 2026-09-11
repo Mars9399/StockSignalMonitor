@@ -41,6 +41,7 @@ struct SignalDetailView: View {
                     position: store.positions[signal.symbol] ?? .init(),
                     onSave: { store.updatePosition(for: signal.symbol, input: $0) }
                 )
+                .id(store.positions[signal.symbol])
 
                 GroupBox("信号说明") {
                     Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 10) {
@@ -138,12 +139,14 @@ private struct PositionEditorCard: View {
 
     @State private var averageCost: Double?
     @State private var quantity: Double?
+    @State private var initialStop: Double?
 
     init(symbol: String, position: PositionInput, onSave: @escaping (PositionInput) -> Void) {
         self.symbol = symbol
         self.onSave = onSave
         _averageCost = State(initialValue: position.averageCost > 0 ? position.averageCost : nil)
         _quantity = State(initialValue: position.quantity > 0 ? position.quantity : nil)
+        _initialStop = State(initialValue: position.initialStop)
     }
 
     var body: some View {
@@ -163,6 +166,12 @@ private struct PositionEditorCard: View {
 
                 Spacer()
 
+                LabeledContent("初始风险线") {
+                    TextField("留空仅观察", value: $initialStop, format: .number)
+                        .frame(width: 100)
+                        .help("低于持仓成本。保存后固定风险线与 2R/3R；提示不代表已执行。")
+                }
+
                 Button("清除") {
                     averageCost = nil
                     quantity = nil
@@ -170,7 +179,7 @@ private struct PositionEditorCard: View {
                 }
 
                 Button("保存持仓") {
-                    onSave(.init(averageCost: averageCost ?? 0, quantity: quantity ?? 0))
+                    onSave(.init(averageCost: averageCost ?? 0, quantity: quantity ?? 0, initialStop: initialStop))
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!isValid)
@@ -182,6 +191,6 @@ private struct PositionEditorCard: View {
 
     private var isValid: Bool {
         guard let averageCost, let quantity else { return false }
-        return averageCost > 0 && quantity > 0
+        return averageCost.isFinite && quantity.isFinite && averageCost > 0 && quantity > 0 && (initialStop == nil || (initialStop!.isFinite && initialStop! > 0 && initialStop! < averageCost))
     }
 }

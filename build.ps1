@@ -20,9 +20,11 @@ if (-not (Test-Path -LiteralPath $Python)) {
     --collect-all yfinance `
     --collect-all polygon `
     --collect-all ibapi `
+    --collect-all tzdata `
     --hidden-import signal_monitor `
     --hidden-import data_providers `
     --hidden-import tws_positions `
+    --hidden-import reliability `
     (Join-Path $ProjectDir "signal_monitor_gui.py")
 
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller 构建失败。" }

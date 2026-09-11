@@ -74,6 +74,7 @@ struct SignalPresentation: Identifiable, Hashable, Sendable {
 struct PositionInput: Codable, Hashable, Sendable {
     var averageCost: Double = 0
     var quantity: Double = 0
+    var initialStop: Double? = nil
 
     var isEmpty: Bool { averageCost <= 0 || quantity <= 0 }
 }

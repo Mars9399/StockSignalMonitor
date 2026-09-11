@@ -22,6 +22,7 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockLatestTradeRequest
 from alpaca.data.timeframe import TimeFrame
 from dotenv import load_dotenv
+from reliability import NEW_YORK, observation_reason
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -71,6 +72,14 @@ def calculate_levels(df: pd.DataFrame, live_price: float) -> dict[str, float | s
         raise ValueError("历史数据缺少 high、low 或 close 列")
 
     frame = df.sort_index().dropna(subset=["high", "low", "close"]).copy()
+    if not isinstance(frame.index, pd.DatetimeIndex):
+        raise ValueError("历史日线缺少交易日期")
+    dates = frame.index.strftime('%Y-%m-%d')
+    frame = frame[dates < datetime.now(NEW_YORK).date().isoformat()]
+    frame = frame[~frame.index.duplicated(keep='last')]
+    frame = frame[(frame['low'] > 0) & (frame['high'] >= frame['low']) & (frame['close'] >= frame['low']) & (frame['close'] <= frame['high'])]
+    if not pd.notna(live_price) or not 0 < live_price < float('inf'):
+        raise ValueError("价格无效")
     history_days = len(frame)
     if history_days == 0:
         raise ValueError("没有可用的历史日线")
@@ -89,17 +98,17 @@ def calculate_levels(df: pd.DataFrame, live_price: float) -> dict[str, float | s
 
     if history_days >= 205:
         fast_period, slow_period = 50, 200
-        signal_quality = "标准"
+        signal_quality = "长周期模型"
         signal_model = "SMA50 / SMA200"
         signal_ready = True
     elif history_days >= 65:
         fast_period, slow_period = 20, 50
-        signal_quality = "降级·中等"
+        signal_quality = "中周期模型"
         signal_model = "SMA20 / SMA50"
         signal_ready = True
     elif history_days >= 35:
         fast_period, slow_period = 10, 30
-        signal_quality = "降级·较低"
+        signal_quality = "短周期模型"
         signal_model = "SMA10 / SMA30"
         signal_ready = True
     else:
@@ -136,6 +145,7 @@ def calculate_levels(df: pd.DataFrame, live_price: float) -> dict[str, float | s
         "trend_fast": trend_fast,
         "trend_slow": trend_slow,
         "history_days": history_days,
+        "history_date": frame.index[-1].strftime('%Y-%m-%d'),
         "signal_quality": signal_quality,
         "signal_model": signal_model,
         "signal_ready": signal_ready,
@@ -195,6 +205,9 @@ def scan(client: StockHistoricalDataClient, symbols: list[str], state: dict[str,
             live_price = float(latest[symbol].price)
             values = calculate_levels(history, live_price)
             status = str(values["status"])
+            reason = observation_reason(live_price, latest[symbol].timestamp, values['history_date'])
+            if reason:
+                status = 'OBSERVATION_ONLY'
             print(
                 f"{symbol:<8} {live_price:>9.2f} {values['buy_point']:>11.2f} "
                 f"{values['stop_point']:>11.2f} {values['risk_pct']:>8.2f}  {status}"

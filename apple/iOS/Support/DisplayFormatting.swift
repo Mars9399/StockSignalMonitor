@@ -40,6 +40,8 @@ enum DisplayFormatting {
 
     static func action(_ action: PositionAction?) -> String {
         switch action {
+        case .needsRiskBaseline: "请设置初始风险线；暂停仓位建议"
+        case let .observationOnly(reason): "仅观察：\(reason)"
         case .insufficientHistory: "历史日线不足，仅观察，不提供仓位意见"
         case let .reduceForRisk(shares): "跌破风险线时减仓 \(shares) 股"
         case let .reduceForExposure(shares): "当前仓位超出上限，建议减仓 \(shares) 股"

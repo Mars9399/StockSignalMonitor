@@ -43,7 +43,7 @@ public struct YahooFinanceService: MarketDataService {
         return StockQuote(
             symbol: result.meta.symbol ?? normalized,
             price: price,
-            timestamp: Date(timeIntervalSince1970: TimeInterval(result.meta.regularMarketTime ?? Int(Date.now.timeIntervalSince1970)))
+            timestamp: Date(timeIntervalSince1970: TimeInterval(result.meta.regularMarketTime ?? 0))
         )
     }
 
@@ -183,7 +183,8 @@ public actor IBKRClientPortalService: MarketDataService {
         let data = try await transport.data(for: URLRequest(url: url))
         let values = try JSONDecoder().decode([IBKRSnapshot].self, from: data)
         guard let first = values.first, let price = first.marketPrice else { throw MarketDataError.noData(symbol) }
-        return StockQuote(symbol: first.symbol ?? symbol, price: price, timestamp: .now)
+        // Snapshot receipt time cannot establish exchange quote freshness.
+        return StockQuote(symbol: first.symbol ?? symbol, price: price, timestamp: Date(timeIntervalSince1970: 0))
     }
 
     private func ensureAuthenticated() async throws {

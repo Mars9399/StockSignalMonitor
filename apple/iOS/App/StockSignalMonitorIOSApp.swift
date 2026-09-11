@@ -9,7 +9,8 @@ struct StockSignalMonitorIOSApp: App {
     init() {
         _store = State(initialValue: MonitorStore(
             riskSettings: AppPreferences.restoredRiskSettings(),
-            configuration: AppPreferences.restoredConfiguration()
+            configuration: AppPreferences.restoredConfiguration(),
+            positionDefaults: .standard
         ))
     }
 

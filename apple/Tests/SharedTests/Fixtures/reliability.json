@@ -1,0 +1,7 @@
+[
+  {"price":100,"quantity":10,"stop":90,"riskLine":90,"target2":120,"target3":130,"action":"hold"},
+  {"price":90,"quantity":10,"stop":90,"riskLine":90,"target2":120,"target3":130,"action":"risk"},
+  {"price":80,"quantity":10,"stop":90,"riskLine":90,"target2":120,"target3":130,"action":"risk"},
+  {"price":120,"quantity":0.5,"stop":90,"riskLine":90,"target2":120,"target3":130,"action":"profit"},
+  {"price":100,"quantity":0.5,"stop":null,"riskLine":0,"target2":0,"target3":0,"action":"baseline"}
+]

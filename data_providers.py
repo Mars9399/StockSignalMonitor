@@ -154,7 +154,7 @@ class YahooWorker(ProviderWorker):
                     divisor = 1000 if float(raw_time) > 10_000_000_000 else 1
                     timestamp = datetime.fromtimestamp(float(raw_time) / divisor, timezone.utc)
                 else:
-                    timestamp = datetime.now(timezone.utc)
+                    timestamp = None
                 self.emit_trade(symbol, float(price), timestamp)
 
             self.events.put(("connection", "Yahoo Finance 流式行情已连接（个人研究用途）"))
@@ -196,7 +196,8 @@ class MassiveWorker(ProviderWorker):
                 try:
                     aggs = list(rest.list_aggs(symbol, 1, "day", start, today, adjusted=True, limit=50000))
                     history = pd.DataFrame(
-                        [{"open": item.open, "high": item.high, "low": item.low, "close": item.close, "volume": item.volume} for item in aggs]
+                        [{"open": item.open, "high": item.high, "low": item.low, "close": item.close, "volume": item.volume} for item in aggs],
+                        index=pd.to_datetime([item.timestamp for item in aggs], unit='ms', utc=True)
                     )
                     last_trade = rest.get_last_trade(symbol)
                     price = float(last_trade.price)
@@ -217,7 +218,7 @@ class MassiveWorker(ProviderWorker):
                     price = getattr(message, "price", None)
                     raw_time = getattr(message, "timestamp", None)
                     if symbol and price is not None:
-                        timestamp = datetime.fromtimestamp(float(raw_time) / 1000, timezone.utc) if raw_time else datetime.now(timezone.utc)
+                        timestamp = datetime.fromtimestamp(float(raw_time) / 1000, timezone.utc) if raw_time else None
                         self.emit_trade(symbol, float(price), timestamp)
 
             label = "延迟" if self.delayed else "实时"
@@ -269,7 +270,7 @@ class IBKRWorker(ProviderWorker):
 
             def historicalData(self, reqId, bar):
                 self.history.setdefault(reqId, []).append(
-                    {"open": float(bar.open), "high": float(bar.high), "low": float(bar.low), "close": float(bar.close), "volume": float(bar.volume)}
+                    {"date": bar.date, "open": float(bar.open), "high": float(bar.high), "low": float(bar.low), "close": float(bar.close), "volume": float(bar.volume)}
                 )
 
             def historicalDataEnd(self, reqId, start, end):
@@ -281,7 +282,8 @@ class IBKRWorker(ProviderWorker):
                 if tickType in {4, 9, 68, 75} and price and price > 0:
                     symbol = self.req_symbols.get(reqId)
                     if symbol:
-                        outer.emit_trade(symbol, float(price), datetime.now(timezone.utc))
+                        # tickPrice does not carry exchange time; do not invent freshness.
+                        outer.emit_trade(symbol, float(price), None)
 
             def error(self, reqId, errorCode, errorString, advancedOrderRejectJson=""):
                 if errorCode in {2104, 2106, 2158}:
@@ -322,8 +324,9 @@ class IBKRWorker(ProviderWorker):
                 if history.empty:
                     self.events.put(("symbol_error", symbol, "IBKR 未返回历史日线"))
                     continue
+                history.index = pd.to_datetime(history.pop('date'), format='%Y%m%d', utc=True)
                 price = float(history["close"].iloc[-1])
-                self.emit_snapshot(symbol, history, price, datetime.now(timezone.utc))
+                self.emit_snapshot(symbol, history, price, history.index[-1].to_pydatetime())
 
             for index, symbol in enumerate(self.symbols):
                 req_id = 2000 + index

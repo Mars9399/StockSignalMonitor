@@ -5,6 +5,7 @@ import StockSignalCore
 final class CoreMonitoringBackend: MonitoringBackend {
     private var coreStore: StockSignalCore.MonitorStore?
     private var relayTask: Task<Void, Never>?
+    private var generation = UUID()
 
     func updates(
         symbols: [String],
@@ -13,6 +14,8 @@ final class CoreMonitoringBackend: MonitoringBackend {
         positions: [String: PositionInput]
     ) async throws -> AsyncStream<MonitorUpdate> {
         stop()
+        let generation = UUID()
+        self.generation = generation
 
         let configuration = try makeConfiguration(provider)
         let riskSettings = StockSignalCore.RiskSettings(
@@ -26,15 +29,12 @@ final class CoreMonitoringBackend: MonitoringBackend {
             configuration: configuration
         )
         for (symbol, position) in positions {
-            let wholeShares = min(
-                Double(Int.max),
-                max(0, position.quantity.rounded(.down))
-            )
             store.updatePosition(
                 StockSignalCore.Position(
                     symbol: symbol,
                     averageCost: position.averageCost,
-                    quantity: Int(wholeShares)
+                    quantity: position.quantity,
+                    initialStop: position.initialStop
                 )
             )
         }
@@ -79,7 +79,10 @@ final class CoreMonitoringBackend: MonitoringBackend {
         }
 
         pair.continuation.onTermination = { @Sendable [weak self] _ in
-            Task { @MainActor in self?.stop() }
+            Task { @MainActor in
+                guard self?.generation == generation else { return }
+                self?.stop()
+            }
         }
         return pair.stream
     }
@@ -150,6 +153,10 @@ final class CoreMonitoringBackend: MonitoringBackend {
     private static func actionText(_ action: PositionAction?) -> String {
         guard let action else { return "等待行情与历史数据" }
         switch action {
+        case .needsRiskBaseline:
+            return "请设置初始风险线；暂停仓位建议"
+        case let .observationOnly(reason):
+            return "仅观察：\(reason)"
         case .insufficientHistory:
             return "历史不足，仅观察，不给出仓位意见"
         case let .reduceForRisk(shares):

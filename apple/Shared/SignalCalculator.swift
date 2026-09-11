@@ -2,8 +2,9 @@ import Foundation
 
 public enum SignalCalculator {
     public static func calculate(history: [DailyBar], livePrice: Double) throws -> SignalLevels {
+        guard livePrice.isFinite, livePrice > 0 else { throw MarketDataError.noData("有效价格") }
         let bars = history
-            .filter { $0.high.isFinite && $0.low.isFinite && $0.close.isFinite }
+            .filter { $0.high.isFinite && $0.low.isFinite && $0.close.isFinite && $0.low > 0 && $0.high >= $0.low && $0.close >= $0.low && $0.close <= $0.high }
             .sorted { $0.date < $1.date }
         guard !bars.isEmpty else { throw MarketDataError.noData("历史日线") }
 
@@ -105,10 +106,11 @@ public enum PositionPlanner {
         let sizingStop: Double
 
         if hasPosition {
-            let movingAverageFloor = levels.trendFast < price ? levels.trendFast : 0.01
-            let trailingCandidate = max(price - 2 * atr, movingAverageFloor)
-            riskReductionPoint = max(0.01, min(trailingCandidate, price - 0.5 * atr))
-            initialRisk = max(position.averageCost - riskReductionPoint, atr)
+            guard let stop = position.initialStop, stop.isFinite, stop > 0, stop < position.averageCost else {
+                return PositionPlan(riskReductionPoint: 0, profitTarget2R: 0, profitTarget3R: 0, maximumShares: 0, action: .needsRiskBaseline)
+            }
+            riskReductionPoint = stop
+            initialRisk = position.averageCost - stop
             sizingPrice = price
             sizingStop = riskReductionPoint
         } else {
@@ -130,14 +132,14 @@ public enum PositionPlanner {
         if hasPosition {
             if price <= riskReductionPoint {
                 action = .reduceForRisk(shares: position.quantity)
-            } else if position.quantity > maximumShares {
-                action = .reduceForExposure(shares: position.quantity - maximumShares)
+            } else if position.quantity > Double(maximumShares) {
+                action = .reduceForExposure(shares: position.quantity - Double(maximumShares))
             } else if price >= target3R {
-                action = .reduceAt3R(shares: max(1, Int(ceil(Double(position.quantity) * 0.5))))
+                action = .reduceAt3R(shares: min(position.quantity, max(1, ceil(position.quantity * 0.5))))
             } else if price >= target2R {
-                action = .reduceAt2R(shares: max(1, Int(ceil(Double(position.quantity) * 0.25))))
-            } else if levels.status == .buyAlert && position.quantity < maximumShares {
-                action = .addAfterBreakout(maximumShares: maximumShares - position.quantity)
+                action = .reduceAt2R(shares: min(position.quantity, max(1, ceil(position.quantity * 0.25))))
+            } else if levels.status == .buyAlert && position.quantity + 1 <= Double(maximumShares) {
+                action = .addAfterBreakout(maximumShares: Int(floor(Double(maximumShares) - position.quantity)))
             } else {
                 action = .hold
             }

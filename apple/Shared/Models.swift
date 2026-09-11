@@ -42,14 +42,14 @@ public enum SignalStatus: String, Codable, CaseIterable, Hashable, Sendable {
 }
 
 public enum SignalQuality: String, Codable, Hashable, Sendable {
-    case standard = "标准"
-    case medium = "降级·中等"
-    case low = "降级·较低"
+    case standard = "长周期模型"
+    case medium = "中周期模型"
+    case low = "短周期模型"
     case observationOnly = "不足·仅观察"
 }
 
 public struct SignalLevels: Codable, Hashable, Sendable {
-    public let status: SignalStatus
+    public var status: SignalStatus
     public let price: Double
     public let buyPoint: Double
     public let stopPoint: Double
@@ -81,12 +81,14 @@ public struct SignalLevels: Codable, Hashable, Sendable {
 public struct Position: Codable, Hashable, Sendable {
     public var symbol: String
     public var averageCost: Double
-    public var quantity: Int
+    public var quantity: Double
+    public var initialStop: Double?
 
-    public init(symbol: String, averageCost: Double = 0, quantity: Int = 0) {
+    public init(symbol: String, averageCost: Double = 0, quantity: Double = 0, initialStop: Double? = nil) {
         self.symbol = symbol.uppercased()
         self.averageCost = max(0, averageCost)
         self.quantity = max(0, quantity)
+        self.initialStop = initialStop
     }
 }
 
@@ -119,11 +121,13 @@ public struct PositionPlan: Codable, Hashable, Sendable {
 }
 
 public enum PositionAction: Codable, Hashable, Sendable {
+    case needsRiskBaseline
+    case observationOnly(String)
     case insufficientHistory
-    case reduceForRisk(shares: Int)
-    case reduceForExposure(shares: Int)
-    case reduceAt2R(shares: Int)
-    case reduceAt3R(shares: Int)
+    case reduceForRisk(shares: Double)
+    case reduceForExposure(shares: Double)
+    case reduceAt2R(shares: Double)
+    case reduceAt3R(shares: Double)
     case addAfterBreakout(maximumShares: Int)
     case openAfterBreakout(maximumShares: Int)
     case wait(candidateMaximumShares: Int)
