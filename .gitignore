@@ -10,6 +10,7 @@ signal_state.json
 signal_alerts.csv
 watchlist.json
 positions.json
+tws_imported_symbols.json
 risk_settings.json
 stock_names.json
 data_provider.txt

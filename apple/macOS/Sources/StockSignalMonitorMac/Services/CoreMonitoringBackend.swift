@@ -26,11 +26,15 @@ final class CoreMonitoringBackend: MonitoringBackend {
             configuration: configuration
         )
         for (symbol, position) in positions {
+            let wholeShares = min(
+                Double(Int.max),
+                max(0, position.quantity.rounded(.down))
+            )
             store.updatePosition(
                 StockSignalCore.Position(
                     symbol: symbol,
                     averageCost: position.averageCost,
-                    quantity: position.quantity
+                    quantity: Int(wholeShares)
                 )
             )
         }
@@ -96,15 +100,9 @@ final class CoreMonitoringBackend: MonitoringBackend {
         case .massive:
             return .massive(apiKey: snapshot.apiKey)
         case .ibkr:
-            guard let baseURL = URL(string: snapshot.ibkrBaseURL),
-                  let scheme = baseURL.scheme,
-                  scheme == "https" || scheme == "http" else {
-                throw CoreBridgeError.invalidIBKRURL
-            }
-            return .ibkrClientPortal(
-                baseURL: baseURL,
-                accountID: snapshot.ibkrAccountID.isEmpty ? nil : snapshot.ibkrAccountID
-            )
+            // TWS supplies read-only positions. Yahoo remains the quote/history
+            // source so the macOS client no longer needs Client Portal Gateway.
+            return .yahoo
         }
     }
 
@@ -176,13 +174,5 @@ final class CoreMonitoringBackend: MonitoringBackend {
     private static func positive(_ value: Double?) -> Double? {
         guard let value, value > 0 else { return nil }
         return value
-    }
-}
-
-private enum CoreBridgeError: LocalizedError {
-    case invalidIBKRURL
-
-    var errorDescription: String? {
-        "IBKR Gateway 地址无效，请输入完整的 http:// 或 https:// 地址。"
     }
 }

@@ -34,6 +34,11 @@ private struct MonitorCommands: Commands {
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
 
+            Button("重新读取 TWS 持仓") {
+                store.syncPositionsFromTWS()
+            }
+            .disabled(store.preferences.provider != .ibkr || store.isSyncingTWSPositions)
+
             Divider()
 
             Button("添加股票…") {

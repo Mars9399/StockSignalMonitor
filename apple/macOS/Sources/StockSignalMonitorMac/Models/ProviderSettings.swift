@@ -4,7 +4,7 @@ enum MarketDataProvider: String, CaseIterable, Codable, Identifiable, Sendable {
     case alpaca = "Alpaca IEX"
     case yahoo = "Yahoo Finance"
     case massive = "Massive / Polygon"
-    case ibkr = "IBKR Gateway"
+    case ibkr = "IBKR TWS + Yahoo 行情"
 
     var id: String { rawValue }
 
@@ -24,8 +24,6 @@ struct ProviderConfigurationSnapshot: Sendable {
     var provider: MarketDataProvider
     var apiKey: String
     var apiSecret: String
-    var ibkrBaseURL: String
-    var ibkrAccountID: String
 }
 
 struct RiskConfiguration: Codable, Sendable {

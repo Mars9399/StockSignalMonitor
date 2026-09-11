@@ -9,16 +9,20 @@ final class AppPreferences {
         static let accountValue = "risk.accountValue"
         static let riskPercent = "risk.percent"
         static let maxPositionPercent = "risk.maxPositionPercent"
-        static let ibkrBaseURL = "ibkr.baseURL"
-        static let ibkrAccountID = "ibkr.accountID"
+        static let twsHost = "tws.host"
+        static let twsPort = "tws.port"
+        static let twsClientID = "tws.clientID"
+        static let twsAccountID = "tws.accountID"
     }
 
     var provider: MarketDataProvider { didSet { defaults.set(provider.rawValue, forKey: Key.provider) } }
     var accountValue: Double { didSet { defaults.set(accountValue, forKey: Key.accountValue) } }
     var riskPercent: Double { didSet { defaults.set(riskPercent, forKey: Key.riskPercent) } }
     var maximumPositionPercent: Double { didSet { defaults.set(maximumPositionPercent, forKey: Key.maxPositionPercent) } }
-    var ibkrBaseURL: String { didSet { defaults.set(ibkrBaseURL, forKey: Key.ibkrBaseURL) } }
-    var ibkrAccountID: String { didSet { defaults.set(ibkrAccountID, forKey: Key.ibkrAccountID) } }
+    var twsHost: String { didSet { defaults.set(twsHost, forKey: Key.twsHost) } }
+    var twsPort: Int { didSet { defaults.set(twsPort, forKey: Key.twsPort) } }
+    var twsClientID: Int { didSet { defaults.set(twsClientID, forKey: Key.twsClientID) } }
+    var twsAccountID: String { didSet { defaults.set(twsAccountID, forKey: Key.twsAccountID) } }
 
     private let defaults: UserDefaults
 
@@ -28,8 +32,10 @@ final class AppPreferences {
         accountValue = defaults.object(forKey: Key.accountValue) as? Double ?? 100_000
         riskPercent = defaults.object(forKey: Key.riskPercent) as? Double ?? 1
         maximumPositionPercent = defaults.object(forKey: Key.maxPositionPercent) as? Double ?? 10
-        ibkrBaseURL = defaults.string(forKey: Key.ibkrBaseURL) ?? "https://localhost:5000/v1/api"
-        ibkrAccountID = defaults.string(forKey: Key.ibkrAccountID) ?? ""
+        twsHost = defaults.string(forKey: Key.twsHost) ?? "127.0.0.1"
+        twsPort = defaults.object(forKey: Key.twsPort) as? Int ?? 7497
+        twsClientID = defaults.object(forKey: Key.twsClientID) as? Int ?? 17
+        twsAccountID = defaults.string(forKey: Key.twsAccountID) ?? ""
     }
 
     var riskConfiguration: RiskConfiguration {
@@ -58,9 +64,7 @@ final class AppPreferences {
         return .init(
             provider: provider,
             apiKey: apiKey,
-            apiSecret: apiSecret,
-            ibkrBaseURL: ibkrBaseURL,
-            ibkrAccountID: ibkrAccountID
+            apiSecret: apiSecret
         )
     }
 }

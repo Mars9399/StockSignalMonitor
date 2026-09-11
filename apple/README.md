@@ -7,11 +7,16 @@
 - 自选股添加、删除、搜索和刷新
 - 买入/突破加仓点、风险减仓点、2R/3R 盈利减仓点
 - 平均成本、持股数量与风险参数输入
-- Alpaca、Yahoo Finance、Massive/Polygon、IBKR Client Portal Gateway 只读行情适配
+- Alpaca、Yahoo Finance、Massive/Polygon 行情适配
+- macOS 通过本机 TWS Socket API 自动同步只读持仓
+- macOS 独立自选列表会合并 TWS 持仓股票，并显示持仓数量、均价与市值
+- macOS 概览支持显示全部/只显示持仓、重新读取 TWS 持仓和清除本地持仓
 - 根据历史日线数量自动使用标准、降级或仅观察模型
 - iPhone/iPad 的标签式导航与 macOS 原生侧栏、设置窗口、菜单和快捷键
 
-> Apple 客户端中的 IBKR 接口使用 Client Portal Gateway Web API，不是桌面 Python 版本的 TWS Socket API。Gateway 必须由用户自行运行并完成登录；iOS 真机访问还要求设备与 Gateway 位于可访问的网络中。
+> macOS 客户端直接连接已登录的 Trader Workstation，不需要 Client Portal Gateway。TWS 中须启用 ActiveX and Socket Clients，并保持 Read-Only API 开启。默认 Paper 端口为 7497，Live 端口为 7496。iOS 版本仍保留 Client Portal Gateway 行情适配。
+
+> TWS Socket API 不提供读取 Mosaic/Classic TWS 自选页的接口。macOS 的“自选列表”读取应用本机保存的自选股票，并在每次同步时自动合并当前 TWS 持仓股票。
 
 ## 工程结构
 
@@ -48,6 +53,6 @@ open apple/StockSignalMonitorApple.xcodeproj
 
 ## 配置安全
 
-API Key 仅保存在 Apple 平台的 Keychain 中；非敏感偏好保存在本机。不要把实际密钥写入源码、`project.yml` 或示例文件。IBKR 应保持只读设置，本项目不会调用任何交易端点。
+API Key 仅保存在 Apple 平台的 Keychain 中；非敏感偏好保存在本机。不要把实际密钥写入源码、`project.yml` 或示例文件。TWS 应保持 Read-Only API 开启；macOS 客户端只实现连接、持仓请求和取消持仓订阅，没有实现任何订单请求。
 
 本工具只提供技术分析辅助，不构成投资建议。

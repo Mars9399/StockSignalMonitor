@@ -4,8 +4,11 @@ import XCTest
 @MainActor
 final class MonitorStoreTests: XCTestCase {
     func testRefreshPopulatesQuoteSignalAndPlan() async {
-        let history = (0..<205).map { index in
-            DailyBar(date: Date(timeIntervalSince1970: Double(index * 86_400)), open: 99, high: Double(index + 101), low: 99, close: Double(index + 100))
+        let history: [DailyBar] = (0..<205).map { index -> DailyBar in
+            let timestamp = Double(index) * 86_400
+            let high = Double(index + 101)
+            let close = Double(index + 100)
+            return DailyBar(date: Date(timeIntervalSince1970: timestamp), open: 99, high: high, low: 99, close: close)
         }
         let mock = MockMarketDataService(
             histories: ["AAPL": history],

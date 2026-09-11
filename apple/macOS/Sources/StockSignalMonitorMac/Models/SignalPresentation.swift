@@ -73,12 +73,27 @@ struct SignalPresentation: Identifiable, Hashable, Sendable {
 
 struct PositionInput: Codable, Hashable, Sendable {
     var averageCost: Double = 0
-    var quantity: Int = 0
+    var quantity: Double = 0
 
     var isEmpty: Bool { averageCost <= 0 || quantity <= 0 }
 }
 
+enum SignalListScope: String, CaseIterable, Identifiable {
+    case all
+    case positions
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all: "显示全部"
+        case .positions: "只显示持仓"
+        }
+    }
+}
+
 enum SidebarSelection: Hashable {
     case overview
+    case watchlist
     case symbol(String)
 }

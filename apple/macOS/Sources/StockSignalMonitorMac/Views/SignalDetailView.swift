@@ -137,7 +137,7 @@ private struct PositionEditorCard: View {
     let onSave: (PositionInput) -> Void
 
     @State private var averageCost: Double?
-    @State private var quantity: Int?
+    @State private var quantity: Double?
 
     init(symbol: String, position: PositionInput, onSave: @escaping (PositionInput) -> Void) {
         self.symbol = symbol
@@ -156,7 +156,7 @@ private struct PositionEditorCard: View {
                 }
 
                 LabeledContent("持股数量") {
-                    TextField("0", value: $quantity, format: .number)
+                    TextField("0", value: $quantity, format: .number.precision(.fractionLength(0...6)))
                         .frame(width: 90)
                         .multilineTextAlignment(.trailing)
                 }

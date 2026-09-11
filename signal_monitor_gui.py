@@ -22,6 +22,7 @@ import yfinance as yf
 from data_providers import AlpacaWorker, IBKRWorker, MassiveWorker, ProviderWorker, YahooWorker
 import signal_monitor as signal_core
 from signal_monitor import calculate_levels, load_state, record_alert, save_state, send_discord
+from tws_positions import fetch_positions, merge_positions
 
 
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
@@ -39,6 +40,8 @@ POSITIONS_FILE = BASE_DIR / "positions.json"
 SETTINGS_FILE = BASE_DIR / "risk_settings.json"
 NAMES_FILE = BASE_DIR / "stock_names.json"
 PROVIDER_FILE = BASE_DIR / "data_provider.txt"
+TWS_IMPORT_FILE = BASE_DIR / "tws_imported_symbols.json"
+TWS_PROVIDER = "IBKR TWS + Yahoo 行情"
 DEFAULT_SYMBOLS = ["AAPL", "MSFT", "NVDA", "SPY", "QQQ"]
 DEFAULT_NAMES = {
     "AAPL": "Apple Inc.",
@@ -56,7 +59,7 @@ def read_watchlist() -> list[str]:
             values = json.loads(WATCHLIST_FILE.read_text(encoding="utf-8"))
             symbols = [str(value).strip().upper() for value in values]
             valid = list(dict.fromkeys(value for value in symbols if SYMBOL_PATTERN.fullmatch(value)))
-            if valid:
+            if isinstance(values, list):
                 return valid
         except (OSError, json.JSONDecodeError, TypeError):
             pass
@@ -81,7 +84,7 @@ def read_positions() -> dict[str, dict[str, float]]:
         return {
             str(symbol).upper(): {
                 "avg_cost": max(0.0, float(values.get("avg_cost", 0))),
-                "quantity": max(0, int(values.get("quantity", 0))),
+                "quantity": max(0.0, float(values.get("quantity", 0))),
             }
             for symbol, values in raw.items()
             if isinstance(values, dict)
@@ -129,7 +132,7 @@ def write_stock_names(names: dict[str, str]) -> None:
 
 
 def read_provider() -> str:
-    allowed = {"Alpaca IEX", "Yahoo Finance", "Massive / Polygon", "IBKR Gateway"}
+    allowed = {"Alpaca IEX", "Yahoo Finance", "Massive / Polygon", "IBKR Gateway", TWS_PROVIDER}
     if PROVIDER_FILE.exists():
         try:
             value = PROVIDER_FILE.read_text(encoding="utf-8").strip()
@@ -173,7 +176,7 @@ def build_position_plan(
     entry_stop = float(values["stop_point"])
     atr = max(0.01, float(values["atr14"]))
     sma50 = float(values["sma50"])
-    quantity = int(position.get("quantity", 0))
+    quantity = float(position.get("quantity", 0))
     avg_cost = float(position.get("avg_cost", 0))
 
     # A held position uses a volatility-aware trailing risk line that always
@@ -203,15 +206,15 @@ def build_position_plan(
 
     if quantity > 0 and avg_cost > 0:
         if price <= position_stop:
-            action = f"风控线触发：规则减 {quantity} 股"
+            action = f"风控线触发：规则减 {quantity:g} 股"
         elif quantity > max_shares:
-            action = f"超风险上限：规则减 {quantity - max_shares} 股"
+            action = f"超风险上限：规则减 {quantity - max_shares:g} 股"
         elif price >= target_3r:
-            action = f"达到3R：规则减 {max(1, math.ceil(quantity * 0.50))} 股"
+            action = f"达到3R：规则减 {min(quantity, max(1, math.ceil(quantity * 0.50))):g} 股"
         elif price >= target_2r:
-            action = f"达到2R：规则减 {max(1, math.ceil(quantity * 0.25))} 股"
+            action = f"达到2R：规则减 {min(quantity, max(1, math.ceil(quantity * 0.25))):g} 股"
         elif values["status"] == "BUY_ALERT" and quantity < max_shares:
-            action = f"突破确认：规则最多加 {max_shares - quantity} 股"
+            action = f"突破确认：规则最多加 {math.floor(max_shares - quantity)} 股"
         else:
             action = "持有观察，不追价"
     elif values["status"] == "BUY_ALERT":
@@ -239,6 +242,9 @@ class SignalMonitorApp:
         self.events: queue.Queue = queue.Queue()
         self.worker: ProviderWorker | None = None
         self.running = False
+        self.syncing_positions = False
+        self.resume_after_sync = False
+        self.pending_tws_start = False
         self.symbols = read_watchlist()
         self.levels: dict[str, dict] = {}
         self.alert_state = load_state()
@@ -250,6 +256,8 @@ class SignalMonitorApp:
         load_dotenv(BASE_DIR / ".env")
         self.provider_var = tk.StringVar(value=read_provider())
         self.feed_var = tk.StringVar(value=self.provider_var.get())
+        self.scope_var = tk.StringVar(value="all")
+        self.tws_message = tk.StringVar(value="尚未读取 TWS 持仓")
 
         self._configure_style()
         self._build_ui()
@@ -308,7 +316,7 @@ class SignalMonitorApp:
         self.provider_combo = ttk.Combobox(
             controls,
             textvariable=self.provider_var,
-            values=("Alpaca IEX", "Yahoo Finance", "Massive / Polygon", "IBKR Gateway"),
+            values=("Alpaca IEX", "Yahoo Finance", "Massive / Polygon", "IBKR Gateway", TWS_PROVIDER),
             width=18,
             state="readonly",
         )
@@ -345,8 +353,21 @@ class SignalMonitorApp:
         self.max_position_entry.pack(side="left", padx=(5, 10), ipady=5)
         ttk.Button(position_card, text="保存风控", style="Secondary.TButton", command=self.save_risk_settings).pack(side="left")
 
-        table_card = ttk.Frame(outer, style="Card.TFrame", padding=1)
-        table_card.pack(fill="both", expand=True)
+        actions = ttk.Frame(outer, style="Card.TFrame", padding=8)
+        actions.pack(fill="x", pady=(0, 8))
+        for label, scope in (("显示全部", "all"), ("只显示持仓", "positions")):
+            ttk.Radiobutton(actions, text=label, variable=self.scope_var, value=scope,
+                            command=self._apply_scope).pack(side="left", padx=6)
+        self.sync_button = ttk.Button(actions, text="重新读取持仓", command=self.sync_positions)
+        self.sync_button.pack(side="left", padx=10)
+        self.clear_positions_button = ttk.Button(actions, text="清除全部持仓", command=self.clear_positions)
+        self.clear_positions_button.pack(side="left")
+        ttk.Label(actions, textvariable=self.tws_message, style="Card.TLabel").pack(side="right", padx=8)
+
+        self.notebook = ttk.Notebook(outer)
+        self.notebook.pack(fill="both", expand=True)
+        table_card = ttk.Frame(self.notebook, style="Card.TFrame", padding=1)
+        self.notebook.add(table_card, text="监控概览")
         columns = ("symbol", "name", "price", "buy", "stop", "avg", "qty", "sell", "status", "quality", "action", "updated")
         self.tree = ttk.Treeview(table_card, columns=columns, show="headings", selectmode="extended")
         headings = {
@@ -375,6 +396,16 @@ class SignalMonitorApp:
         self.tree.tag_configure("ERROR", foreground="#ff7b87")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
+        watch_card = ttk.Frame(self.notebook)
+        self.notebook.add(watch_card, text="自选列表")
+        watch_columns = ("symbol", "name", "price", "held", "quantity", "cost", "value")
+        self.watch_tree = ttk.Treeview(watch_card, columns=watch_columns, show="headings", selectmode="extended")
+        for column, title in zip(watch_columns, ("股票", "名称", "最新价", "持仓状态", "数量", "平均成本", "持仓市值")):
+            self.watch_tree.heading(column, text=title)
+            self.watch_tree.column(column, width=140, anchor="center")
+        self.watch_tree.tag_configure("held", foreground="#63e6a4")
+        self.watch_tree.pack(fill="both", expand=True)
+        self.watch_tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
         footer = ttk.Frame(outer, style="App.TFrame")
         footer.pack(fill="x", pady=(14, 0))
@@ -418,7 +449,7 @@ class SignalMonitorApp:
         env_path = BASE_DIR / ".env"
         if not env_path.exists():
             env_path.write_text(
-                "# Select: Alpaca IEX, Yahoo Finance, Massive / Polygon, IBKR Gateway\n"
+                "# Select: Alpaca IEX, Yahoo Finance, Massive / Polygon, IBKR Gateway, IBKR TWS + Yahoo 行情\n"
                 "DATA_PROVIDER=Alpaca IEX\n\n"
                 "# Alpaca credentials\n"
                 "ALPACA_API_KEY=replace_with_your_key\n"
@@ -431,6 +462,8 @@ class SignalMonitorApp:
                 "IBKR_PORT=4002\n"
                 "IBKR_CLIENT_ID=17\n"
                 "IBKR_MARKET_DATA_TYPE=3\n\n"
+                "# TWS read-only positions: Paper 7497, Live 7496\n"
+                "TWS_HOST=127.0.0.1\nTWS_PORT=7497\nTWS_CLIENT_ID=17\nTWS_ACCOUNT_ID=\n\n"
                 "DISCORD_WEBHOOK_URL=\n",
                 encoding="utf-8",
             )
@@ -467,14 +500,125 @@ class SignalMonitorApp:
         for item in self.tree.get_children():
             self.tree.delete(item)
         for symbol in self.symbols:
+            if self.tree.exists(symbol):
+                self.tree.delete(symbol)
             position = self.positions.get(symbol, {})
             avg_cost = float(position.get("avg_cost", 0))
-            quantity = int(position.get("quantity", 0))
+            quantity = float(position.get("quantity", 0))
             self.tree.insert(
                 "", "end", iid=symbol,
-                values=(symbol, self.stock_names.get(symbol, "查询中…"), "—", "—", "—", f"${avg_cost:,.2f}" if avg_cost else "—", quantity or "—", "—", "待启动", "—", "—", "—"),
+                values=(symbol, self.stock_names.get(symbol, "查询中…"), "—", "—", "—", f"${avg_cost:,.2f}" if avg_cost else "—", f"{quantity:g}" if quantity else "—", "—", "待启动", "—", "—", "—"),
             )
-        self.count_var.set(f"监控 {len(self.symbols)} 只股票")
+            if symbol in self.levels:
+                self._render_row(symbol, self.levels[symbol]["price"], "—")
+        self._apply_scope()
+        self._refresh_watchlist()
+
+    def _active_tree(self):
+        return self.watch_tree if self.notebook.index(self.notebook.select()) == 1 else self.tree
+
+    def _apply_scope(self):
+        for symbol in self.symbols:
+            if self.tree.exists(symbol):
+                if self.scope_var.get() == "positions" and self.positions.get(symbol, {}).get("quantity", 0) <= 0:
+                    self.tree.detach(symbol)
+                else:
+                    self.tree.move(symbol, "", "end")
+
+    def _refresh_watchlist(self):
+        for symbol in self.watch_tree.get_children():
+            if symbol not in self.symbols:
+                self.watch_tree.delete(symbol)
+        for symbol in self.symbols:
+            position = self.positions.get(symbol, {})
+            quantity = float(position.get("quantity", 0))
+            cost = float(position.get("avg_cost", 0))
+            price = self.levels.get(symbol, {}).get("price", 0)
+            row = (symbol, self.stock_names.get(symbol, "—"), f"${price:,.2f}" if price else "—",
+                   "持仓" if quantity > 0 else "未持仓", f"{quantity:g}" if quantity else "—",
+                   f"${cost:,.2f}" if quantity else "—", f"${price * quantity:,.2f}" if price and quantity else "—")
+            if not self.watch_tree.exists(symbol):
+                self.watch_tree.insert("", "end", iid=symbol)
+            self.watch_tree.item(symbol, values=row, tags=("held",) if quantity else ())
+        held = sum(self.positions.get(symbol, {}).get("quantity", 0) > 0 for symbol in self.symbols)
+        self.count_var.set(f"自选 {len(self.symbols)} 只 · 持仓 {held} 只")
+
+    def sync_positions(self, start_after=False):
+        if self.syncing_positions:
+            return
+        load_dotenv(BASE_DIR / ".env", override=True)
+        try:
+            host = os.getenv("TWS_HOST", "127.0.0.1").strip()
+            port = int(os.getenv("TWS_PORT", "7497"))
+            client_id = int(os.getenv("TWS_CLIENT_ID", "17"))
+            account = os.getenv("TWS_ACCOUNT_ID", "").strip()
+        except ValueError:
+            messagebox.showerror("TWS 配置错误", "TWS_PORT 和 TWS_CLIENT_ID 必须为整数")
+            return
+        self.syncing_positions = True
+        self.resume_after_sync = start_after
+        self.sync_button.configure(state="disabled")
+        self.clear_positions_button.configure(state="disabled")
+        self.start_button.configure(state="disabled")
+        self.tws_message.set("正在读取 TWS 持仓…")
+
+        def worker():
+            try:
+                snapshots = fetch_positions(host, port, client_id)
+                self.events.put(("tws_positions", snapshots, account))
+            except Exception as exc:
+                self.events.put(("tws_error", str(exc)))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_position_sync(self, error=None):
+        self.syncing_positions = False
+        self.sync_button.configure(state="normal")
+        self.clear_positions_button.configure(state="normal")
+        self.start_button.configure(state="disabled" if self.running else "normal")
+        resume = self.resume_after_sync
+        self.resume_after_sync = False
+        if error:
+            self.tws_message.set("持仓同步失败，原有数据已保留")
+            self._append_log(f"TWS 持仓同步失败：{error}")
+            messagebox.showerror("持仓同步失败", error)
+        elif resume:
+            self.start_monitoring(sync_tws=False)
+
+    def _apply_tws_positions(self, snapshots, account):
+        try:
+            previous = json.loads(TWS_IMPORT_FILE.read_text(encoding="utf-8")) if TWS_IMPORT_FILE.exists() else []
+            positions, imported, skipped = merge_positions(self.positions, snapshots, previous, account)
+            write_positions(positions)
+            TWS_IMPORT_FILE.write_text(json.dumps(imported), encoding="utf-8")
+            self.positions = positions
+            new_symbols = [symbol for symbol in imported if symbol not in self.symbols]
+            self.symbols.extend(new_symbols)
+            write_watchlist(self.symbols)
+            self._populate_symbols()
+            self.on_tree_select()
+            self._resolve_missing_names(new_symbols)
+            message = f"已同步 {len(imported)} 只持仓"
+            if skipped:
+                message += f" · 跳过 {skipped} 项不支持的持仓"
+            self.tws_message.set(message)
+            self._append_log(message)
+            if new_symbols and self.running:
+                self.pending_tws_start = True
+                self.stop_monitoring()
+            self._finish_position_sync()
+        except Exception as exc:
+            self._finish_position_sync(str(exc))
+
+    def clear_positions(self):
+        if self.syncing_positions or not messagebox.askyesno("清除全部本地持仓？", "自选股票会保留，之后可从 TWS 重新读取持仓。"):
+            return
+        write_positions({})
+        TWS_IMPORT_FILE.write_text("[]", encoding="utf-8")
+        self.positions.clear()
+        self._populate_symbols()
+        self.avg_cost_entry.delete(0, "end")
+        self.quantity_entry.delete(0, "end")
+        self.tws_message.set("本地持仓已清除")
 
     def add_symbol(self) -> None:
         symbol = self.symbol_entry.get().strip().upper()
@@ -489,12 +633,14 @@ class SignalMonitorApp:
         self.tree.insert("", "end", iid=symbol, values=(symbol, self.stock_names.get(symbol, "查询中…"), "—", "—", "—", "—", "—", "—", "待启动", "—", "—", "—"))
         self.symbol_entry.delete(0, "end")
         self.count_var.set(f"监控 {len(self.symbols)} 只股票")
+        self._apply_scope()
+        self._refresh_watchlist()
         self._resolve_missing_names([symbol])
         if self.running:
             self._append_log(f"已添加 {symbol}；停止并重新启动后应用新的订阅。")
 
     def remove_selected(self) -> None:
-        selected = list(self.tree.selection())
+        selected = list(self._active_tree().selection())
         if not selected:
             return
         self.symbols = [symbol for symbol in self.symbols if symbol not in selected]
@@ -502,12 +648,12 @@ class SignalMonitorApp:
             self.tree.delete(symbol)
             self.levels.pop(symbol, None)
         write_watchlist(self.symbols)
-        self.count_var.set(f"监控 {len(self.symbols)} 只股票")
+        self._refresh_watchlist()
         if self.running:
             self._append_log("监控列表已改变；停止并重新启动后应用新的订阅。")
 
     def on_tree_select(self, _event=None) -> None:
-        selected = self.tree.selection()
+        selected = self._active_tree().selection()
         if not selected:
             return
         symbol = selected[0]
@@ -517,22 +663,22 @@ class SignalMonitorApp:
         self.quantity_entry.delete(0, "end")
         if float(position.get("avg_cost", 0)) > 0:
             self.avg_cost_entry.insert(0, f"{float(position['avg_cost']):.4f}")
-        if int(position.get("quantity", 0)) > 0:
-            self.quantity_entry.insert(0, str(int(position["quantity"])))
+        if float(position.get("quantity", 0)) > 0:
+            self.quantity_entry.insert(0, f"{float(position['quantity']):g}")
 
     def save_position(self) -> None:
-        selected = self.tree.selection()
+        selected = self._active_tree().selection()
         if not selected:
             messagebox.showwarning("未选择股票", "请先在表格中选择一只股票。")
             return
         symbol = selected[0]
         try:
             avg_cost = float(self.avg_cost_entry.get().strip() or "0")
-            quantity = int(self.quantity_entry.get().strip() or "0")
-            if avg_cost < 0 or quantity < 0 or (quantity > 0 and avg_cost <= 0):
+            quantity = float(self.quantity_entry.get().strip() or "0")
+            if not math.isfinite(avg_cost) or not math.isfinite(quantity) or avg_cost < 0 or quantity < 0 or (quantity > 0 and avg_cost <= 0):
                 raise ValueError
         except ValueError:
-            messagebox.showwarning("持仓输入无效", "均价必须大于0，股数必须是非负整数；清仓可把两项都填0。")
+            messagebox.showwarning("持仓输入无效", "均价必须大于0，股数必须是非负数（支持碎股）；清仓可把两项都填0。")
             return
 
         if quantity == 0:
@@ -540,6 +686,8 @@ class SignalMonitorApp:
         else:
             self.positions[symbol] = {"avg_cost": avg_cost, "quantity": quantity}
         write_positions(self.positions)
+        self._apply_scope()
+        self._refresh_watchlist()
         if symbol in self.levels:
             self._render_row(symbol, float(self.levels[symbol]["price"]), datetime.now().astimezone())
         else:
@@ -570,8 +718,11 @@ class SignalMonitorApp:
             f"风控已保存：账户 ${account_value:,.0f}，单笔风险 {risk_pct:g}%，单股资金上限 {max_position_pct:g}%。"
         )
 
-    def start_monitoring(self) -> None:
-        if self.running:
+    def start_monitoring(self, sync_tws=True) -> None:
+        if self.running or self.syncing_positions:
+            return
+        if self.provider_var.get() == TWS_PROVIDER and sync_tws:
+            self.sync_positions(start_after=True)
             return
         if not self.symbols:
             messagebox.showwarning("没有股票", "请先添加至少一只需要监控的股票。")
@@ -587,7 +738,7 @@ class SignalMonitorApp:
                 messagebox.showerror("缺少密钥", "请点击“配置密钥”填写 Alpaca API Key 和 Secret。")
                 return
             worker: ProviderWorker = AlpacaWorker(api_key, api_secret, self.symbols.copy(), self.events)
-        elif provider == "Yahoo Finance":
+        elif provider in {"Yahoo Finance", TWS_PROVIDER}:
             worker = YahooWorker(self.symbols.copy(), self.events)
         elif provider == "Massive / Polygon":
             api_key = os.getenv("MASSIVE_API_KEY", os.getenv("POLYGON_API_KEY", "")).strip()
@@ -624,6 +775,7 @@ class SignalMonitorApp:
         self.worker.start()
 
     def stop_monitoring(self) -> None:
+        self.resume_after_sync = False
         if self.worker is not None:
             self.connection_var.set("正在停止…")
             self.worker.stop()
@@ -637,6 +789,9 @@ class SignalMonitorApp:
         self.stop_button.configure(state="disabled")
         self.provider_combo.configure(state="readonly")
         self.connection_var.set("已停止")
+        if self.pending_tws_start:
+            self.pending_tws_start = False
+            self.root.after(0, lambda: self.start_monitoring(sync_tws=False))
 
     def _process_events(self) -> None:
         latest_trades: dict[str, tuple[float, object]] = {}
@@ -646,6 +801,10 @@ class SignalMonitorApp:
                 kind = event[0]
                 if kind == "trade":
                     latest_trades[event[1]] = (event[2], event[3])
+                elif kind == "tws_positions":
+                    self._apply_tws_positions(event[1], event[2])
+                elif kind == "tws_error":
+                    self._finish_position_sync(event[1])
                 elif kind == "snapshot":
                     self._apply_snapshot(event[1], event[2], event[3])
                 elif kind == "connection":
@@ -662,6 +821,7 @@ class SignalMonitorApp:
                         if len(current) >= 2:
                             current[1] = name
                             self.tree.item(symbol, values=current)
+                    self._refresh_watchlist()
                 elif kind == "error":
                     self.connection_var.set(event[1])
                     self._append_log(event[1])
@@ -737,7 +897,7 @@ class SignalMonitorApp:
         status_text, status_tag = display_status(values, price)
         position = self.positions.get(symbol, {"avg_cost": 0, "quantity": 0})
         avg_cost = float(position.get("avg_cost", 0))
-        quantity = int(position.get("quantity", 0))
+        quantity = float(position.get("quantity", 0))
         plan = build_position_plan(
             values,
             position,
@@ -767,7 +927,7 @@ class SignalMonitorApp:
             buy_text,
             stop_text,
             f"${avg_cost:,.2f}" if avg_cost > 0 else "—",
-            quantity if quantity > 0 else "—",
+            f"{quantity:g}" if quantity > 0 else "—",
             sell_text,
             status_text,
             quality_text,
@@ -776,6 +936,7 @@ class SignalMonitorApp:
         )
         if self.tree.exists(symbol):
             self.tree.item(symbol, values=row, tags=(status_tag,))
+        self._refresh_watchlist()
 
     def _trigger_alert(self, symbol: str, values: dict) -> None:
         now = datetime.now(timezone.utc)
@@ -801,7 +962,10 @@ class SignalMonitorApp:
 
     def _show_symbol_error(self, symbol: str, error: str) -> None:
         if self.tree.exists(symbol):
-            self.tree.item(symbol, values=(symbol, self.stock_names.get(symbol, "—"), "—", "—", "—", "—", "—", "—", "数据错误", "—", error[:32], "—"), tags=("ERROR",))
+            position = self.positions.get(symbol, {})
+            quantity = float(position.get("quantity", 0))
+            cost = float(position.get("avg_cost", 0))
+            self.tree.item(symbol, values=(symbol, self.stock_names.get(symbol, "—"), "—", "—", "—", f"${cost:,.2f}" if quantity else "—", f"{quantity:g}" if quantity else "—", "—", "数据错误", "—", error[:32], "—"), tags=("ERROR",))
         self._append_log(f"{symbol}：{error}")
 
     def _append_log(self, text: str) -> None:

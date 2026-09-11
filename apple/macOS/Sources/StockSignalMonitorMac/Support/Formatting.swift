@@ -16,3 +16,9 @@ extension Optional where Wrapped == Double {
         return self.formatted(SignalFormatting.currency)
     }
 }
+
+extension Double {
+    var shareQuantityText: String {
+        formatted(.number.precision(.fractionLength(0...6)))
+    }
+}

@@ -29,6 +29,8 @@ struct ContentView: View {
         switch store.selection {
         case .overview, .none:
             SignalTableView(store: store)
+        case .watchlist:
+            WatchlistView(store: store)
         case .symbol:
             if let signal = store.selectedSignal {
                 SignalDetailView(store: store, signal: signal)
@@ -39,7 +41,11 @@ struct ContentView: View {
     }
 
     private var detailTitle: String {
-        store.selectedSignal?.symbol ?? "监控概览"
+        switch store.selection {
+        case .watchlist: "自选列表"
+        case .symbol: store.selectedSignal?.symbol ?? "股票详情"
+        case .overview, .none: "监控概览"
+        }
     }
 
     @ToolbarContentBuilder

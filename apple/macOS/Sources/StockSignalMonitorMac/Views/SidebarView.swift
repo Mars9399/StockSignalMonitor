@@ -9,9 +9,12 @@ struct SidebarView: View {
             Label("监控概览", systemImage: "rectangle.grid.1x2")
                 .tag(SidebarSelection.overview)
 
+            Label("自选列表", systemImage: "star.square.on.square")
+                .tag(SidebarSelection.watchlist)
+
             Section("自选股票") {
                 ForEach(store.signals) { signal in
-                    SidebarSignalRow(signal: signal)
+                    SidebarSignalRow(signal: signal, hasPosition: store.hasPosition(signal.symbol))
                         .tag(SidebarSelection.symbol(signal.symbol))
                         .contextMenu {
                             Button("移除 \(signal.symbol)", role: .destructive) {
@@ -54,6 +57,7 @@ struct SidebarView: View {
 
 private struct SidebarSignalRow: View {
     let signal: SignalPresentation
+    let hasPosition: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -62,9 +66,16 @@ private struct SidebarSignalRow: View {
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(signal.symbol)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(signal.symbol)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    if hasPosition {
+                        Text("持仓")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.green)
+                    }
+                }
 
                 Text(signal.currentPrice.currencyText)
                     .font(.caption)
