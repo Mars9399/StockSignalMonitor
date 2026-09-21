@@ -326,6 +326,10 @@ class SignalMonitorApp:
         self.last_logged_status: dict[str, str] = {}
         self.last_rendered_prices: dict[str, float] = {}
         self.price_flash_jobs: dict[str, str] = {}
+        self.mover_last_prices: dict[str, float] = {}
+        self.mover_flash_jobs: dict[str, str] = {}
+        self.market_directory_last_prices: dict[str, float] = {}
+        self.market_directory_flash_jobs: dict[str, str] = {}
         self.quote_times = {}
         self.last_market_event_at: float | None = None
         self.manual_stop_requested = False
@@ -368,6 +372,7 @@ class SignalMonitorApp:
         self.root.configure(bg="#18243a")
         self.root.option_add("*TCombobox*Listbox.font", ("Microsoft YaHei UI", ui_font))
         style = ttk.Style()
+        self.app_style = style
         style.theme_use("clam")
         style.configure("App.TFrame", background="#18243a")
         style.configure("Card.TFrame", background="#22314a")
@@ -403,6 +408,14 @@ class SignalMonitorApp:
         style.configure("Treeview", background="#24334d", fieldbackground="#24334d", foreground="#f0f5fb", rowheight=int(self.ui_settings["table_row_height"]), borderwidth=0, font=("Consolas", table_font))
         style.configure("Treeview.Heading", background="#3a4e6c", foreground="#eef4fb", relief="flat", font=("Microsoft YaHei UI", ui_font, "bold"))
         style.map("Treeview", background=[("selected", "#4b72a8")], foreground=[("selected", "#ffffff")])
+        style.configure("Overview.Treeview", background="#24334d", fieldbackground="#24334d", foreground="#f0f5fb")
+        style.configure("Watchlist.Treeview", background="#24334d", fieldbackground="#24334d", foreground="#f0f5fb")
+        style.configure("Mover.Treeview", background="#24334d", fieldbackground="#24334d", foreground="#f0f5fb")
+        style.configure("Market.Treeview", background="#24334d", fieldbackground="#24334d", foreground="#f0f5fb")
+        style.map("Overview.Treeview", background=[("selected", "#4b72a8")], foreground=[("selected", "#ffffff")])
+        style.map("Watchlist.Treeview", background=[("selected", "#4b72a8")], foreground=[("selected", "#ffffff")])
+        style.map("Mover.Treeview", background=[("selected", "#4b72a8")], foreground=[("selected", "#ffffff")])
+        style.map("Market.Treeview", background=[("selected", "#4b72a8")], foreground=[("selected", "#ffffff")])
 
     def _build_ui(self) -> None:
         outer = ttk.Frame(self.root, style="App.TFrame", padding=22)
@@ -519,7 +532,7 @@ class SignalMonitorApp:
             "symbol", "name", "price", "buy", "stop", "avg", "qty", "status",
             "buy_probability", "reduce_probability", "quality", "action", "updated",
         )
-        self.tree = ttk.Treeview(table_card, columns=columns, show="headings", selectmode="extended")
+        self.tree = ttk.Treeview(table_card, columns=columns, show="headings", selectmode="extended", style="Overview.Treeview")
         headings = {
             "symbol": "股票",
             "name": "股票名称",
@@ -563,7 +576,7 @@ class SignalMonitorApp:
         self.watch_card = ttk.Frame(self.notebook)
         self.notebook.add(self.watch_card, text="自选列表")
         watch_columns = ("symbol", "name", "price", "held", "quantity", "cost", "value")
-        self.watch_tree = ttk.Treeview(self.watch_card, columns=watch_columns, show="headings", selectmode="extended")
+        self.watch_tree = ttk.Treeview(self.watch_card, columns=watch_columns, show="headings", selectmode="extended", style="Watchlist.Treeview")
         for column, title in zip(watch_columns, ("股票", "名称", "最新价", "持仓状态", "数量", "平均成本", "持仓市值")):
             self.watch_tree.heading(column, text=title)
             self.watch_tree.column(column, width=140, anchor="center")
@@ -819,7 +832,7 @@ class SignalMonitorApp:
         title_label.pack(fill="x", pady=(0, 5))
         self.mover_title_labels.append(title_label)
         columns = ("rank", "symbol", "name", "price", "change", "volume", "buy", "sell", "advice", "updated")
-        tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse", height=10)
+        tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse", height=10, style="Mover.Treeview")
         headings = ("#", "股票", "名称", "现价", "涨跌", "成交量", "突破线", "卖出点", "买入机会分析", "行情时间")
         widths = (34, 62, 125, 72, 67, 82, 76, 76, 205, 72)
         for column, label, width in zip(columns, headings, widths):
@@ -835,6 +848,8 @@ class SignalMonitorApp:
             "ERROR": ("#ffc3a6", "#563d34"),
         }.items():
             tree.tag_configure(tag, foreground=colors[0], background=colors[1])
+        tree.tag_configure("PRICE_UP", foreground="#eafff2", background="#16784a")
+        tree.tag_configure("PRICE_DOWN", foreground="#fff0f2", background="#9a3342")
         horizontal = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
         vertical = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         tree.configure(xscrollcommand=horizontal.set, yscrollcommand=vertical.set)
@@ -891,6 +906,7 @@ class SignalMonitorApp:
             columns=columns,
             show="headings",
             selectmode="browse",
+            style="Market.Treeview",
         )
         headings = ("股票", "名称", "交易所", "现价", "涨跌", "成交量", "市值", "自选")
         widths = (90, 260, 145, 100, 90, 120, 135, 70)
@@ -900,6 +916,8 @@ class SignalMonitorApp:
         self.market_directory_tree.tag_configure("UP", foreground="#dffff0", background="#245b43")
         self.market_directory_tree.tag_configure("DOWN", foreground="#ffe3e7", background="#693541")
         self.market_directory_tree.tag_configure("FLAT", foreground="#e5edf7", background="#344158")
+        self.market_directory_tree.tag_configure("PRICE_UP", foreground="#eafff2", background="#16784a")
+        self.market_directory_tree.tag_configure("PRICE_DOWN", foreground="#fff0f2", background="#9a3342")
         horizontal = ttk.Scrollbar(self.market_directory_card, orient="horizontal", command=self.market_directory_tree.xview)
         vertical = ttk.Scrollbar(self.market_directory_card, orient="vertical", command=self.market_directory_tree.yview)
         self.market_directory_tree.configure(xscrollcommand=horizontal.set, yscrollcommand=vertical.set)
@@ -951,6 +969,14 @@ class SignalMonitorApp:
             self.market_directory_tree.delete(item)
         for entry in result.entries:
             change_tag = "UP" if entry.change_pct > 0 else "DOWN" if entry.change_pct < 0 else "FLAT"
+            previous_price = self.market_directory_last_prices.get(entry.symbol)
+            movement_tag = ""
+            if previous_price is not None:
+                if entry.price > previous_price:
+                    movement_tag = "PRICE_UP"
+                elif entry.price < previous_price:
+                    movement_tag = "PRICE_DOWN"
+            self.market_directory_last_prices[entry.symbol] = entry.price
             market_cap = (
                 f"${entry.market_cap / 1_000_000_000:.1f}B"
                 if entry.market_cap >= 1_000_000_000
@@ -968,8 +994,21 @@ class SignalMonitorApp:
                     market_cap,
                     "★ 已加入" if entry.symbol in self.symbols else "—",
                 ),
-                tags=(change_tag,),
+                tags=(change_tag, movement_tag) if movement_tag else (change_tag,),
             )
+            if movement_tag:
+                previous_job = self.market_directory_flash_jobs.pop(entry.symbol, None)
+                if previous_job is not None:
+                    self.root.after_cancel(previous_job)
+                self.market_directory_flash_jobs[entry.symbol] = self.root.after(
+                    1500,
+                    lambda current_symbol=entry.symbol: self._clear_auxiliary_price_flash(
+                        self.market_directory_tree,
+                        current_symbol,
+                        self.market_directory_flash_jobs,
+                        "Market.Treeview",
+                    ),
+                )
         if search_text:
             self.market_directory_status_var.set(f"搜索“{search_text}” · 返回 {len(result.entries)} 只 · 右键可加入自选")
         else:
@@ -1044,11 +1083,20 @@ class SignalMonitorApp:
         for item in tree.get_children():
             tree.delete(item)
         for result in rows:
+            item_id = f"{result.side}:{result.symbol}"
+            previous_price = self.mover_last_prices.get(item_id)
+            movement_tag = ""
+            if previous_price is not None:
+                if result.price > previous_price:
+                    movement_tag = "PRICE_UP"
+                elif result.price < previous_price:
+                    movement_tag = "PRICE_DOWN"
+            self.mover_last_prices[item_id] = result.price
             quote_time = result.quote_time.astimezone(NEW_YORK).strftime("%H:%M:%S") if result.quote_time else "—"
             tree.insert(
                 "",
                 "end",
-                iid=f"{result.side}:{result.symbol}",
+                iid=item_id,
                 values=(
                     result.rank,
                     result.symbol,
@@ -1061,8 +1109,21 @@ class SignalMonitorApp:
                     result.opportunity,
                     quote_time,
                 ),
-                tags=(result.tag,),
+                tags=(result.tag, movement_tag) if movement_tag else (result.tag,),
             )
+            if movement_tag:
+                previous_job = self.mover_flash_jobs.pop(item_id, None)
+                if previous_job is not None:
+                    self.root.after_cancel(previous_job)
+                if item_id in tree.selection():
+                    color = "#16784a" if movement_tag == "PRICE_UP" else "#9a3342"
+                    self.app_style.map("Mover.Treeview", background=[("selected", color)], foreground=[("selected", "#ffffff")])
+                self.mover_flash_jobs[item_id] = self.root.after(
+                    1500,
+                    lambda current_tree=tree, current_item=item_id: self._clear_auxiliary_price_flash(
+                        current_tree, current_item, self.mover_flash_jobs, "Mover.Treeview"
+                    ),
+                )
 
     def add_selected_mover(self) -> None:
         gainers_selected = self.gainers_tree.selection()
@@ -1885,6 +1946,11 @@ class SignalMonitorApp:
                 movement_tag = "PRICE_UP"
             elif price < previous_price:
                 movement_tag = "PRICE_DOWN"
+        if not movement_tag and symbol in self.price_flash_jobs and self.tree.exists(symbol):
+            movement_tag = next(
+                (tag for tag in self.tree.item(symbol, "tags") if tag in {"PRICE_UP", "PRICE_DOWN"}),
+                "",
+            )
         self.last_rendered_prices[symbol] = price
         values = self.levels[symbol]
         status_text, status_tag = display_status(values, price)
@@ -1952,22 +2018,43 @@ class SignalMonitorApp:
             if self.watch_tree.exists(symbol):
                 base_tags = tuple(self.watch_tree.item(symbol, "tags"))
                 self.watch_tree.item(symbol, tags=base_tags + (movement_tag,))
-            previous_job = self.price_flash_jobs.pop(symbol, None)
-            if previous_job is not None:
-                self.root.after_cancel(previous_job)
-            self.price_flash_jobs[symbol] = self.root.after(
-                750,
-                lambda current_symbol=symbol: self._clear_price_flash(current_symbol),
-            )
+            if symbol not in self.price_flash_jobs or price != previous_price:
+                previous_job = self.price_flash_jobs.pop(symbol, None)
+                if previous_job is not None:
+                    self.root.after_cancel(previous_job)
+                color = "#16784a" if movement_tag == "PRICE_UP" else "#9a3342"
+                if symbol in self.tree.selection():
+                    self.app_style.map("Overview.Treeview", background=[("selected", color)], foreground=[("selected", "#ffffff")])
+                if symbol in self.watch_tree.selection():
+                    self.app_style.map("Watchlist.Treeview", background=[("selected", color)], foreground=[("selected", "#ffffff")])
+                self.price_flash_jobs[symbol] = self.root.after(
+                    1500,
+                    lambda current_symbol=symbol: self._clear_price_flash(current_symbol),
+                )
 
     def _clear_price_flash(self, symbol: str) -> None:
         self.price_flash_jobs.pop(symbol, None)
+        self.app_style.map("Overview.Treeview", background=[("selected", "#4b72a8")], foreground=[("selected", "#ffffff")])
+        self.app_style.map("Watchlist.Treeview", background=[("selected", "#4b72a8")], foreground=[("selected", "#ffffff")])
         if self.tree.exists(symbol):
             tags = tuple(tag for tag in self.tree.item(symbol, "tags") if tag not in {"PRICE_UP", "PRICE_DOWN"})
             self.tree.item(symbol, tags=tags)
         if self.watch_tree.exists(symbol):
             tags = tuple(tag for tag in self.watch_tree.item(symbol, "tags") if tag not in {"PRICE_UP", "PRICE_DOWN"})
             self.watch_tree.item(symbol, tags=tags)
+
+    def _clear_auxiliary_price_flash(
+        self,
+        tree: ttk.Treeview,
+        item: str,
+        jobs: dict[str, str],
+        style_name: str,
+    ) -> None:
+        jobs.pop(item, None)
+        self.app_style.map(style_name, background=[("selected", "#4b72a8")], foreground=[("selected", "#ffffff")])
+        if tree.exists(item):
+            tags = tuple(tag for tag in tree.item(item, "tags") if tag not in {"PRICE_UP", "PRICE_DOWN"})
+            tree.item(item, tags=tags)
 
     def _trigger_alert(self, symbol: str, values: dict) -> None:
         if observation_reason(float(values['price']), self.quote_times.get(symbol), values.get('history_date')):

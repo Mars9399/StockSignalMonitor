@@ -50,38 +50,54 @@ struct MarketDirectoryView: View {
                             .disabled(store.watchlist.contains(entry.symbol))
                         }
                         .onTapGesture(count: 2) { store.addMarketSymbol(entry.symbol) }
+                        .priceMovementBackground(store.priceMovements[entry.symbol])
                 }
                 .width(90)
 
-                TableColumn("名称") { entry in Text(entry.name).lineLimit(1) }
+                TableColumn("名称") { entry in
+                    Text(entry.name).lineLimit(1)
+                        .priceMovementBackground(store.priceMovements[entry.symbol])
+                }
                     .width(min: 180, ideal: 270)
-                TableColumn("交易所") { entry in Text(entry.exchange) }
+                TableColumn("交易所") { entry in
+                    Text(entry.exchange)
+                        .priceMovementBackground(store.priceMovements[entry.symbol])
+                }
                     .width(130)
                 TableColumn("现价") { entry in
                     Text(entry.price > 0 ? entry.price.formatted(SignalFormatting.currency) : "—")
                         .monospacedDigit()
                         .foregroundStyle(color(for: entry))
+                        .priceMovementBackground(store.priceMovements[entry.symbol])
                 }
                 .width(100)
                 TableColumn("涨跌") { entry in
                     Text(String(format: "%+.2f%%", entry.changePercent))
                         .monospacedDigit()
                         .foregroundStyle(color(for: entry))
+                        .priceMovementBackground(store.priceMovements[entry.symbol])
                 }
                 .width(90)
                 TableColumn("成交量") { entry in
                     Text(entry.volume > 0 ? entry.volume.formatted(.number.precision(.fractionLength(0))) : "—")
                         .monospacedDigit()
+                        .priceMovementBackground(store.priceMovements[entry.symbol])
                 }
                 .width(110)
-                TableColumn("市值") { entry in Text(marketCap(entry.marketCap)).monospacedDigit() }
+                TableColumn("市值") { entry in
+                    Text(marketCap(entry.marketCap)).monospacedDigit()
+                        .priceMovementBackground(store.priceMovements[entry.symbol])
+                }
                     .width(110)
                 TableColumn("自选") { entry in
-                    if store.watchlist.contains(entry.symbol) {
-                        Label("已加入", systemImage: "star.fill").foregroundStyle(.yellow)
-                    } else {
-                        Text("—").foregroundStyle(.tertiary)
+                    Group {
+                        if store.watchlist.contains(entry.symbol) {
+                            Label("已加入", systemImage: "star.fill").foregroundStyle(.yellow)
+                        } else {
+                            Text("—").foregroundStyle(.tertiary)
+                        }
                     }
+                    .priceMovementBackground(store.priceMovements[entry.symbol])
                 }
                 .width(80)
             }

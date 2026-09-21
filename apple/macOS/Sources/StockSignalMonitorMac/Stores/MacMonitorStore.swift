@@ -229,6 +229,9 @@ final class MacMonitorStore {
                 let result = query.isEmpty
                     ? try await marketDirectoryService.page(requestedPage)
                     : try await marketDirectoryService.search(query)
+                for entry in result.entries where entry.price > 0 {
+                    registerPriceMovement(symbol: entry.symbol, price: entry.price)
+                }
                 marketEntries = result.entries
                 marketPage = result.page
                 marketTotal = result.total
@@ -253,18 +256,22 @@ final class MacMonitorStore {
     private func applySignals(_ newSignals: [SignalPresentation]) {
         for signal in newSignals {
             guard let price = signal.currentPrice else { continue }
-            defer { lastPresentedPrices[signal.symbol] = price }
-            guard let previous = lastPresentedPrices[signal.symbol], previous != price else { continue }
-            priceMovements[signal.symbol] = price > previous ? .up : .down
-            priceFlashTasks[signal.symbol]?.cancel()
-            priceFlashTasks[signal.symbol] = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(750))
-                guard !Task.isCancelled else { return }
-                self?.priceMovements.removeValue(forKey: signal.symbol)
-                self?.priceFlashTasks.removeValue(forKey: signal.symbol)
-            }
+            registerPriceMovement(symbol: signal.symbol, price: price)
         }
         signals = newSignals
+    }
+
+    private func registerPriceMovement(symbol: String, price: Double) {
+        defer { lastPresentedPrices[symbol] = price }
+        guard let previous = lastPresentedPrices[symbol], previous != price else { return }
+        priceMovements[symbol] = price > previous ? .up : .down
+        priceFlashTasks[symbol]?.cancel()
+        priceFlashTasks[symbol] = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(1_500))
+            guard !Task.isCancelled else { return }
+            self?.priceMovements.removeValue(forKey: symbol)
+            self?.priceFlashTasks.removeValue(forKey: symbol)
+        }
     }
 
     private func persistWatchlist() {

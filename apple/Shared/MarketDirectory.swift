@@ -136,14 +136,21 @@ private struct DirectoryQuote: Decodable {
 
     var directoryEntry: MarketDirectoryEntry? {
         guard let symbol, !symbol.isEmpty else { return nil }
-        return .init(
-            symbol: symbol.uppercased(),
-            name: shortName ?? longName ?? shortname ?? longname ?? symbol,
-            exchange: fullExchangeName ?? exchDisp ?? exchange ?? "—",
-            price: regularMarketPrice ?? 0,
-            changePercent: regularMarketChangePercent ?? 0,
-            volume: regularMarketVolume ?? 0,
-            marketCap: marketCap ?? 0
+        let normalizedSymbol = symbol.uppercased()
+        let displayName = shortName ?? longName ?? shortname ?? longname ?? symbol
+        let displayExchange = fullExchangeName ?? exchDisp ?? exchange ?? "—"
+        let price = regularMarketPrice ?? 0
+        let changePercent = regularMarketChangePercent ?? 0
+        let volume = regularMarketVolume ?? 0
+        let capitalization = marketCap ?? 0
+        return MarketDirectoryEntry(
+            symbol: normalizedSymbol,
+            name: displayName,
+            exchange: displayExchange,
+            price: price,
+            changePercent: changePercent,
+            volume: volume,
+            marketCap: capitalization
         )
     }
 }

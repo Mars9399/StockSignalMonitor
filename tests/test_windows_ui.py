@@ -74,15 +74,20 @@ class WindowsUITests(unittest.TestCase):
                     score_row = app.tree.item("MSFT", "values")
                     self.assertIn("%", score_row[8])
                     self.assertIn("%", score_row[9])
+                    app.tree.selection_set("MSFT")
                     app.levels["MSFT"]["price"] = 100.0
                     with patch.object(gui, "observation_reason", return_value=None):
                         app._render_row("MSFT", 100.0, datetime.now(timezone.utc))
                     self.assertIn("PRICE_UP", app.tree.item("MSFT", "tags"))
                     self.assertIn("PRICE_UP", app.watch_tree.item("MSFT", "tags"))
+                    self.assertEqual(style.lookup("Overview.Treeview", "background", ("selected",)), "#16784a")
                     app.levels["MSFT"]["price"] = 98.0
                     with patch.object(gui, "observation_reason", return_value=None):
                         app._render_row("MSFT", 98.0, datetime.now(timezone.utc))
                     self.assertIn("PRICE_DOWN", app.tree.item("MSFT", "tags"))
+                    app._clear_price_flash("MSFT")
+                    self.assertNotIn("PRICE_DOWN", app.tree.item("MSFT", "tags"))
+                    self.assertEqual(style.lookup("Overview.Treeview", "background", ("selected",)), "#4b72a8")
                     app.running = False
                     app._apply_tws_positions([dict(symbol="AAPL", quantity=0.5, avg_cost=100,
                                                    account="test", security_type="STK", currency="USD")], "")
@@ -107,5 +112,12 @@ class WindowsUITests(unittest.TestCase):
                     app._render_movers(app.gainers_tree, [result])
                     self.assertEqual(app.gainers_tree.item("gainers:NVDA", "values")[1], "NVDA")
                     self.assertIn("买入机会", app.gainers_tree.item("gainers:NVDA", "values")[8])
+                    changed_result = gui.MoverResult(
+                        side="gainers", rank=1, symbol="NVDA", name="NVIDIA", price=201,
+                        change_pct=9.0, volume=1_100_000, buy_point=199, sell_point=180,
+                        opportunity="买入机会：突破 +1.0%", tag="BUY", quote_time=datetime.now(timezone.utc),
+                    )
+                    app._render_movers(app.gainers_tree, [changed_result])
+                    self.assertIn("PRICE_UP", app.gainers_tree.item("gainers:NVDA", "tags"))
             finally:
                 root.destroy()

@@ -331,7 +331,7 @@ struct WatchlistView: View {
     }
 }
 
-private struct PriceMovementBackground: ViewModifier {
+struct PriceMovementBackground: ViewModifier {
     let movement: PriceMovement?
 
     func body(content: Content) -> some View {
@@ -351,7 +351,7 @@ private struct PriceMovementBackground: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     func priceMovementBackground(_ movement: PriceMovement?) -> some View {
         modifier(PriceMovementBackground(movement: movement))
     }
