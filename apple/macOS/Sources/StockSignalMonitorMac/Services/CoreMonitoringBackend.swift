@@ -135,6 +135,11 @@ final class CoreMonitoringBackend: MonitoringBackend {
                 portfolioValue: portfolioValue
             )
         }
+        let signalQuality = levels.map { value in
+            let momentum = String(format: "%.1f%%", value.momentum5DayPercent)
+            let rsi = String(format: "%.0f", value.rsi14)
+            return "\(value.quality.rawValue) · \(value.modelName) · 5日动量 \(momentum) · RSI \(rsi)"
+        } ?? "—"
         return .init(
             symbol: stock.symbol,
             companyName: CompanyNameResolver.resolve(symbol: stock.symbol, suppliedName: stock.name),
@@ -144,9 +149,7 @@ final class CoreMonitoringBackend: MonitoringBackend {
             profitTarget2R: positive(plan?.profitTarget2R),
             profitTarget3R: positive(plan?.profitTarget3R),
             status: presentationStatus(levels: levels, plan: plan, error: stock.errorMessage),
-            signalQuality: levels.map {
-                "\($0.quality.rawValue) · \($0.modelName) · 5日动量 \(String(format: \"%.1f%%\", $0.momentum5DayPercent)) · RSI \(String(format: \"%.0f\", $0.rsi14))"
-            } ?? "—",
+            signalQuality: signalQuality,
             action: actionText(plan?.action),
             buyProbability: levels?.isReady == true ? score?.buyProbability : nil,
             reduceProbability: levels?.isReady == true ? score?.reduceProbability : nil,

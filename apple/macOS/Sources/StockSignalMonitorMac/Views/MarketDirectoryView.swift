@@ -1,4 +1,5 @@
 import SwiftUI
+import StockSignalCore
 
 struct MarketDirectoryView: View {
     let store: MacMonitorStore
