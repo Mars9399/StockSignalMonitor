@@ -37,12 +37,13 @@ public struct StockQuote: Codable, Hashable, Sendable, Identifiable {
 public enum SignalStatus: String, Codable, CaseIterable, Hashable, Sendable {
     case dataShort = "DATA_SHORT"
     case buyAlert = "BUY_ALERT"
+    case sellAlert = "SELL_ALERT"
     case watch = "WATCH"
     case noSignal = "NO_SIGNAL"
 }
 
 public enum SignalQuality: String, Codable, Hashable, Sendable {
-    case standard = "长周期模型"
+    case standard = "实时价格通道"
     case medium = "中周期模型"
     case low = "短周期模型"
     case observationOnly = "不足·仅观察"
@@ -61,8 +62,29 @@ public struct SignalLevels: Codable, Hashable, Sendable {
     public let quality: SignalQuality
     public let modelName: String
     public let isReady: Bool
+    public let momentum5DayPercent: Double
+    public let momentum10DayPercent: Double
+    public let rsi14: Double
+    public let volumeRatio: Double
 
-    public init(status: SignalStatus, price: Double, buyPoint: Double, stopPoint: Double, riskPercent: Double, atr14: Double, trendFast: Double, trendSlow: Double, historyDays: Int, quality: SignalQuality, modelName: String, isReady: Bool) {
+    public init(
+        status: SignalStatus,
+        price: Double,
+        buyPoint: Double,
+        stopPoint: Double,
+        riskPercent: Double,
+        atr14: Double,
+        trendFast: Double,
+        trendSlow: Double,
+        historyDays: Int,
+        quality: SignalQuality,
+        modelName: String,
+        isReady: Bool,
+        momentum5DayPercent: Double = 0,
+        momentum10DayPercent: Double = 0,
+        rsi14: Double = 50,
+        volumeRatio: Double = 1
+    ) {
         self.status = status
         self.price = price
         self.buyPoint = buyPoint
@@ -75,6 +97,24 @@ public struct SignalLevels: Codable, Hashable, Sendable {
         self.quality = quality
         self.modelName = modelName
         self.isReady = isReady
+        self.momentum5DayPercent = momentum5DayPercent
+        self.momentum10DayPercent = momentum10DayPercent
+        self.rsi14 = rsi14
+        self.volumeRatio = volumeRatio
+    }
+}
+
+public struct ActionProbabilityScore: Codable, Hashable, Sendable {
+    public let buyProbability: Int
+    public let reduceProbability: Int
+    public let buyLabel: String
+    public let reduceLabel: String
+
+    public init(buyProbability: Int, reduceProbability: Int, buyLabel: String, reduceLabel: String) {
+        self.buyProbability = buyProbability
+        self.reduceProbability = reduceProbability
+        self.buyLabel = buyLabel
+        self.reduceLabel = reduceLabel
     }
 }
 
@@ -130,6 +170,8 @@ public enum PositionAction: Codable, Hashable, Sendable {
     case reduceAt3R(shares: Double)
     case addAfterBreakout(maximumShares: Int)
     case openAfterBreakout(maximumShares: Int)
+    case sellSignal(shares: Double)
+    case sellSignalNoPosition
     case wait(candidateMaximumShares: Int)
     case hold
 }

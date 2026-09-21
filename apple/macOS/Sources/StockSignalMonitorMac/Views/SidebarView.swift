@@ -12,6 +12,9 @@ struct SidebarView: View {
             Label("自选列表", systemImage: "star.square.on.square")
                 .tag(SidebarSelection.watchlist)
 
+            Label("全市场股票", systemImage: "globe.americas.fill")
+                .tag(SidebarSelection.market)
+
             Section("自选股票") {
                 ForEach(store.signals) { signal in
                     SidebarSignalRow(signal: signal, hasPosition: store.hasPosition(signal.symbol))

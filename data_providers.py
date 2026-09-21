@@ -264,6 +264,7 @@ class IBKRWorker(ProviderWorker):
                 self.history: dict[int, list[dict]] = {}
                 self.history_done: dict[int, threading.Event] = {}
                 self.req_symbols: dict[int, str] = {}
+                self.last_prices: dict[int, float] = {}
 
             def nextValidId(self, orderId):
                 self.ready.set()
@@ -278,12 +279,30 @@ class IBKRWorker(ProviderWorker):
                     self.history_done[reqId].set()
 
             def tickPrice(self, reqId, tickType, price, attrib):
-                # Last, close, delayed-last, delayed-close.
-                if tickType in {4, 9, 68, 75} and price and price > 0:
-                    symbol = self.req_symbols.get(reqId)
-                    if symbol:
-                        # tickPrice does not carry exchange time; do not invent freshness.
-                        outer.emit_trade(symbol, float(price), None)
+                # Keep the last or delayed-last price until its exchange timestamp arrives.
+                if tickType in {4, 68} and price and price > 0:
+                    self.last_prices[reqId] = float(price)
+
+            def tickString(self, reqId, tickType, value):
+                symbol = self.req_symbols.get(reqId)
+                if not symbol:
+                    return
+                try:
+                    if tickType in {45, 88}:  # Last / delayed-last timestamp, Unix seconds.
+                        price = self.last_prices.get(reqId)
+                        if price is not None:
+                            timestamp = datetime.fromtimestamp(float(value), timezone.utc)
+                            outer.emit_trade(symbol, price, timestamp)
+                    elif tickType in {48, 77}:  # RTVolume / RTTradeVolume includes price and Unix ms.
+                        fields = str(value).split(";")
+                        if len(fields) >= 3:
+                            price = float(fields[0])
+                            timestamp = datetime.fromtimestamp(float(fields[2]) / 1000, timezone.utc)
+                            if price > 0:
+                                self.last_prices[reqId] = price
+                                outer.emit_trade(symbol, price, timestamp)
+                except (TypeError, ValueError, OSError):
+                    return
 
             def error(self, reqId, errorCode, errorString, advancedOrderRejectJson=""):
                 if errorCode in {2104, 2106, 2158}:
@@ -331,7 +350,7 @@ class IBKRWorker(ProviderWorker):
             for index, symbol in enumerate(self.symbols):
                 req_id = 2000 + index
                 self.app.req_symbols[req_id] = symbol
-                self.app.reqMktData(req_id, stock_contract(symbol), "", False, False, [])
+                self.app.reqMktData(req_id, stock_contract(symbol), "233", False, False, [])
             mode = {1: "实时", 2: "冻结", 3: "延迟/自动实时", 4: "延迟冻结"}.get(self.market_data_type, str(self.market_data_type))
             self.events.put(("connection", f"IBKR Gateway 行情已连接 · {mode}"))
             while not self.stop_requested.wait(0.5) and self.app.isConnected():

@@ -96,6 +96,7 @@ public final class MonitorStore {
         do {
             let service = try resolvedService()
             let requestedSymbols = symbols
+            var updatedCount = 0
             for symbol in requestedSymbols {
                 do {
                     async let history = service.history(for: symbol, lookbackDays: 730)
@@ -105,6 +106,7 @@ public final class MonitorStore {
                     histories[symbol] = DataReliability.completedBars(loadedHistory)
                     if let index = stocks.firstIndex(where: { $0.symbol == symbol }) {
                         apply(quote: latestQuote, history: histories[symbol]!, at: index)
+                        updatedCount += 1
                     }
                 } catch {
                     if Task.isCancelled { return }
@@ -115,9 +117,13 @@ public final class MonitorStore {
                     }
                 }
             }
-            lastUpdated = .now
-            historyDay = DataReliability.day(.now)
-            connectionMessage = "\(configuration.kind.displayName) 行情已更新"
+            if updatedCount > 0 {
+                lastUpdated = .now
+                historyDay = DataReliability.day(.now)
+                connectionMessage = "\(configuration.kind.displayName) 行情已更新"
+            } else {
+                connectionMessage = "未取得有效行情，等待自动重试"
+            }
         } catch {
             errorMessage = error.localizedDescription
             connectionMessage = "连接失败"
@@ -140,21 +146,33 @@ public final class MonitorStore {
             guard let self else { return }
             await self.refresh()
             guard !Task.isCancelled else { return }
-            do {
-                let service = try self.resolvedService()
-                self.connectionMessage = "正在监控 \(self.configuration.kind.displayName) 行情"
-                for try await quotes in service.quoteStream(for: self.symbols, pollInterval: interval) {
-                    guard !Task.isCancelled else { break }
-                    if self.historyDay != DataReliability.day(.now) { await self.refresh() }
-                    for quote in quotes { self.applyLiveQuote(quote) }
-                    self.lastUpdated = .now
+            var retrySeconds = 1
+            while !Task.isCancelled {
+                do {
+                    let service = try self.resolvedService()
+                    self.connectionMessage = "正在监控 \(self.configuration.kind.displayName) 行情"
+                    for try await quotes in service.quoteStream(for: self.symbols, pollInterval: interval) {
+                        guard !Task.isCancelled else { break }
+                        if self.historyDay != DataReliability.day(.now) { await self.refresh() }
+                        for quote in quotes { self.applyLiveQuote(quote) }
+                        if !quotes.isEmpty {
+                            self.lastUpdated = .now
+                            retrySeconds = 1
+                        }
+                    }
+                    if Task.isCancelled { break }
+                    throw MarketDataError.noData("行情流已结束")
+                } catch is CancellationError {
+                    break
+                } catch {
+                    self.errorMessage = error.localizedDescription
+                    self.connectionMessage = "行情中断，\(retrySeconds) 秒后自动重连"
+                    self.service = nil
+                    try? await Task.sleep(for: .seconds(retrySeconds))
+                    if Task.isCancelled { break }
+                    retrySeconds = min(30, retrySeconds * 2)
+                    await self.refresh()
                 }
-            } catch is CancellationError {
-                // Normal stop.
-            } catch {
-                self.errorMessage = error.localizedDescription
-                self.connectionMessage = "监控中断"
-                for index in self.stocks.indices { self.stocks[index].plan = nil }
             }
             self.isMonitoring = false
         }

@@ -71,28 +71,16 @@ struct StockDetailView: View {
                 .font(.title3.bold())
             LazyVGrid(columns: columns, spacing: 12) {
                 MetricCard(
-                    title: "买入 / 突破加仓点",
+                    title: "突破买入线",
                     value: DisplayFormatting.price(stock.levels?.buyPoint),
-                    detail: "到价并确认趋势后观察",
+                    detail: "实时价格向上触发时提示",
                     color: .green
                 )
                 MetricCard(
-                    title: "风险减仓点",
+                    title: "卖出触发点",
                     value: DisplayFormatting.price(stock.plan?.riskReductionPoint ?? stock.levels?.stopPoint),
-                    detail: "跌破时优先控制风险",
+                    detail: "实时价格向下触发时提示",
                     color: .red
-                )
-                MetricCard(
-                    title: "盈利减仓点 2R",
-                    value: DisplayFormatting.price(stock.plan?.profitTarget2R),
-                    detail: "分批锁定盈利",
-                    color: .blue
-                )
-                MetricCard(
-                    title: "盈利减仓点 3R",
-                    value: DisplayFormatting.price(stock.plan?.profitTarget3R),
-                    detail: "继续分批锁定盈利",
-                    color: .blue
                 )
             }
         }

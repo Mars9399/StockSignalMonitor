@@ -15,16 +15,25 @@ public extension MarketDataService {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
+                    var consecutiveEmptyPolls = 0
                     while !Task.isCancelled {
-                        let quotes = try await withThrowingTaskGroup(of: StockQuote.self) { group in
+                        let quotes = await withTaskGroup(of: StockQuote?.self) { group in
                             for symbol in symbols {
-                                group.addTask { try await quote(for: symbol) }
+                                group.addTask { try? await quote(for: symbol) }
                             }
                             var output: [StockQuote] = []
-                            for try await quote in group { output.append(quote) }
+                            for await quote in group {
+                                if let quote { output.append(quote) }
+                            }
                             return output.sorted { $0.symbol < $1.symbol }
                         }
-                        continuation.yield(quotes)
+                        if quotes.isEmpty {
+                            consecutiveEmptyPolls += 1
+                            if consecutiveEmptyPolls >= 3 { throw MarketDataError.noData("所有监控股票") }
+                        } else {
+                            consecutiveEmptyPolls = 0
+                            continuation.yield(quotes)
+                        }
                         try await Task.sleep(for: pollInterval)
                     }
                     continuation.finish()

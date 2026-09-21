@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     let store: MacMonitorStore
+    @State private var didAutoStart = false
 
     var body: some View {
         @Bindable var store = store
@@ -22,6 +23,12 @@ struct ContentView: View {
         } message: {
             Text(store.lastError ?? "未知错误")
         }
+        .environment(\.dynamicTypeSize, dynamicTypeSize)
+        .task {
+            guard !didAutoStart else { return }
+            didAutoStart = true
+            if store.preferences.autoStartMonitoring { store.startMonitoring() }
+        }
     }
 
     @ViewBuilder
@@ -31,6 +38,8 @@ struct ContentView: View {
             SignalTableView(store: store)
         case .watchlist:
             WatchlistView(store: store)
+        case .market:
+            MarketDirectoryView(store: store)
         case .symbol:
             if let signal = store.selectedSignal {
                 SignalDetailView(store: store, signal: signal)
@@ -43,6 +52,7 @@ struct ContentView: View {
     private var detailTitle: String {
         switch store.selection {
         case .watchlist: "自选列表"
+        case .market: "全市场股票"
         case .symbol: store.selectedSignal?.symbol ?? "股票详情"
         case .overview, .none: "监控概览"
         }
@@ -80,5 +90,15 @@ struct ContentView: View {
             get: { store.lastError != nil },
             set: { if !$0 { store.lastError = nil } }
         )
+    }
+
+    private var dynamicTypeSize: DynamicTypeSize {
+        switch store.preferences.interfaceScale {
+        case ..<0.9: return .small
+        case ..<1.05: return .medium
+        case ..<1.2: return .large
+        case ..<1.32: return .xLarge
+        default: return .xxLarge
+        }
     }
 }

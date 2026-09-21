@@ -13,6 +13,9 @@ if (-not (Test-Path -LiteralPath $Python)) {
     --clean `
     --windowed `
     --name StockSignalMonitor `
+    --icon (Join-Path $ProjectDir "assets\app_icon.ico") `
+    --version-file (Join-Path $ProjectDir "assets\version_info.txt") `
+    --add-data "$ProjectDir\assets;assets" `
     --distpath $OutputDir `
     --workpath $WorkDir `
     --specpath $WorkDir `
@@ -23,6 +26,9 @@ if (-not (Test-Path -LiteralPath $Python)) {
     --collect-all tzdata `
     --hidden-import signal_monitor `
     --hidden-import data_providers `
+    --hidden-import market_directory `
+    --hidden-import market_movers `
+    --hidden-import tws_data `
     --hidden-import tws_positions `
     --hidden-import reliability `
     (Join-Path $ProjectDir "signal_monitor_gui.py")

@@ -36,21 +36,22 @@ class ReliabilityTests(unittest.TestCase):
         scenarios = json.loads((ROOT / 'apple/Tests/SharedTests/Fixtures/reliability.json').read_text())
         for s in scenarios:
             values = dict(signal_ready=True, price=s['price'], buy_point=110, stop_point=100,
-                          atr14=5, sma50=70, status='NO_SIGNAL')
+                          atr14=5, sma50=70, status=s['status'])
             plan = scope['build_position_plan'](values, dict(quantity=s['quantity'], avg_cost=100,
                                                            initial_stop=s['stop']), 100000, 1, 10)
             self.assertEqual(plan['position_stop'], s['riskLine'])
             self.assertEqual(plan['target_2r'], s['target2'])
             self.assertEqual(plan['target_3r'], s['target3'])
-            text = {'risk':'风控线触发', 'profit':'0.5 股', 'baseline':'请设置初始风险线', 'hold':'持有观察'}[s['action']]
+            text = {'sell':'卖出提示', 'buy':'买入提示', 'hold':'持有'}[s['action']]
             self.assertIn(text, plan['action'])
 
     def test_fresh_stale_missing_and_weekend(self):
         now = datetime(2026, 9, 11, 15, tzinfo=timezone.utc)
         self.assertIsNone(observation_reason(100, now, '2026-09-10', now))
-        self.assertIsNotNone(observation_reason(100, now-timedelta(seconds=121), '2026-09-10', now))
+        self.assertIsNotNone(observation_reason(100, now-timedelta(seconds=181), '2026-09-10', now))
         self.assertIsNotNone(observation_reason(100, None, '2026-09-10', now))
-        self.assertIsNotNone(observation_reason(100, now, '2026-09-09', now))
+        self.assertIsNone(observation_reason(100, now, '2026-09-09', now))
+        self.assertIsNotNone(observation_reason(100, now, '2026-09-06', now))
         weekend = now+timedelta(days=1)
         self.assertIsNotNone(observation_reason(100, weekend, '2026-09-11', weekend))
 

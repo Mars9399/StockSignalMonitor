@@ -17,14 +17,24 @@ final class MacMonitorStore {
     var twsPositionMessage = "尚未同步"
     var lastError: String?
     var activityLog: [String] = []
+    var priceMovements: [String: PriceMovement] = [:]
+    var marketEntries: [MarketDirectoryEntry] = []
+    var marketPage = 0
+    var marketTotal = 0
+    var marketSearchText = ""
+    var marketDirectoryMessage = "分页浏览 Yahoo 美股市场；右键可加入自选"
+    var isLoadingMarketDirectory = false
 
     let preferences: AppPreferences
     let credentials: ProviderCredentials
 
     private let backend: any MonitoringBackend
     private let twsPositionClient = TWSPositionClient()
+    private let marketDirectoryService = YahooMarketDirectoryService()
     private var monitoringTask: Task<Void, Never>?
     private var monitoringGeneration = UUID()
+    private var lastPresentedPrices: [String: Double] = [:]
+    private var priceFlashTasks: [String: Task<Void, Never>] = [:]
     private let defaults: UserDefaults
 
     init(
@@ -97,7 +107,7 @@ final class MacMonitorStore {
                 )
                 for await update in stream {
                     guard !Task.isCancelled else { break }
-                    signals = update.signals
+                    applySignals(update.signals)
                     if let message = update.message {
                         connectionMessage = message
                         log(message)
@@ -204,6 +214,57 @@ final class MacMonitorStore {
         guard isMonitoring else { return }
         stopMonitoring()
         startMonitoring(syncTWSPositions: false)
+    }
+
+    func loadMarketDirectory(page: Int? = nil) {
+        guard !isLoadingMarketDirectory else { return }
+        let requestedPage = max(0, page ?? marketPage)
+        let query = marketSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        isLoadingMarketDirectory = true
+        marketDirectoryMessage = query.isEmpty ? "正在读取全市场股票…" : "正在搜索 \(query)…"
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isLoadingMarketDirectory = false }
+            do {
+                let result = query.isEmpty
+                    ? try await marketDirectoryService.page(requestedPage)
+                    : try await marketDirectoryService.search(query)
+                marketEntries = result.entries
+                marketPage = result.page
+                marketTotal = result.total
+                marketDirectoryMessage = query.isEmpty
+                    ? "全市场约 \(result.total) 只 · 第 \(result.page + 1) 页"
+                    : "搜索“\(query)” · 返回 \(result.entries.count) 只"
+            } catch {
+                marketDirectoryMessage = "全市场股票读取失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    func clearMarketSearchAndLoad(page: Int) {
+        marketSearchText = ""
+        loadMarketDirectory(page: page)
+    }
+
+    func addMarketSymbol(_ symbol: String) {
+        addSymbol(symbol)
+    }
+
+    private func applySignals(_ newSignals: [SignalPresentation]) {
+        for signal in newSignals {
+            guard let price = signal.currentPrice else { continue }
+            defer { lastPresentedPrices[signal.symbol] = price }
+            guard let previous = lastPresentedPrices[signal.symbol], previous != price else { continue }
+            priceMovements[signal.symbol] = price > previous ? .up : .down
+            priceFlashTasks[signal.symbol]?.cancel()
+            priceFlashTasks[signal.symbol] = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(750))
+                guard !Task.isCancelled else { return }
+                self?.priceMovements.removeValue(forKey: signal.symbol)
+                self?.priceFlashTasks.removeValue(forKey: signal.symbol)
+            }
+        }
+        signals = newSignals
     }
 
     private func persistWatchlist() {

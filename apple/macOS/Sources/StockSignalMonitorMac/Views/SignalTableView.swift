@@ -16,60 +16,79 @@ struct SignalTableView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
+                    .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(min: 90, ideal: 150)
 
                 TableColumn("实时价") { signal in
                     Text(signal.currentPrice.currencyText).monospacedDigit()
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(85)
 
                 TableColumn("持仓") { signal in
-                    if let position = store.positions[signal.symbol], !position.isEmpty {
-                        Text("\(position.quantity.shareQuantityText) 股")
-                            .fontWeight(.medium)
-                            .monospacedDigit()
-                    } else {
-                        Text("—").foregroundStyle(.tertiary)
+                    Group {
+                        if let position = store.positions[signal.symbol], !position.isEmpty {
+                            Text("\(position.quantity.shareQuantityText) 股")
+                                .fontWeight(.medium)
+                                .monospacedDigit()
+                        } else {
+                            Text("—").foregroundStyle(.tertiary)
+                        }
                     }
+                    .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(80)
 
                 TableColumn("持仓均价") { signal in
                     Text((store.positions[signal.symbol]?.averageCost).currencyText)
                         .monospacedDigit()
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(90)
 
-                TableColumn("买入/突破加仓点") { signal in
+                TableColumn("突破买入线") { signal in
                     Text(signal.buyTrigger.currencyText).monospacedDigit()
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(125)
 
-                TableColumn("风险减仓点") { signal in
+                TableColumn("卖出触发点") { signal in
                     Text(signal.riskReductionPoint.currencyText).monospacedDigit()
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(105)
 
-                TableColumn("盈利减仓 2R / 3R") { signal in
-                    Text("\(signal.profitTarget2R.currencyText) / \(signal.profitTarget3R.currencyText)")
-                        .monospacedDigit()
+                TableColumn("即时买入概率*") { signal in
+                    ProbabilityText(score: signal.buyProbability, label: signal.buyProbabilityLabel, isReduction: false)
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
-                .width(min: 150, ideal: 175)
+                .width(105)
+
+                TableColumn("建议减持概率*") { signal in
+                    ProbabilityText(score: signal.reduceProbability, label: signal.reduceProbabilityLabel, isReduction: true)
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
+                }
+                .width(105)
 
                 TableColumn("状态") { signal in
                     StatusBadge(status: signal.status)
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(100)
 
                 TableColumn("仓位意见") { signal in
                     Text(signal.action)
                         .lineLimit(2)
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(min: 150, ideal: 220)
             }
+            .environment(\.defaultMinListRowHeight, store.preferences.tableRowHeight)
 
-            ActivityLogView(entries: store.activityLog)
+            if store.preferences.showActivityLog {
+                ActivityLogView(entries: store.activityLog, height: store.preferences.logHeight)
+            }
         }
     }
 
@@ -86,6 +105,30 @@ struct SignalTableView: View {
     }
 }
 
+private struct ProbabilityText: View {
+    let score: Int?
+    let label: String
+    let isReduction: Bool
+
+    var body: some View {
+        if let score {
+            Text("\(score)% \(label)")
+                .fontWeight(score >= 55 ? .semibold : .regular)
+                .monospacedDigit()
+                .foregroundStyle(color(for: score))
+        } else {
+            Text("—").foregroundStyle(.tertiary)
+        }
+    }
+
+    private func color(for score: Int) -> Color {
+        if score >= 75 { return isReduction ? .red : .green }
+        if score >= 55 { return isReduction ? .orange : .mint }
+        if score >= 35 { return .yellow }
+        return .secondary
+    }
+}
+
 private struct MonitorSummaryHeader: View {
     let store: MacMonitorStore
     @State private var isConfirmingClear = false
@@ -96,7 +139,7 @@ private struct MonitorSummaryHeader: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("美股信号监控")
+                    Text("美股信号监控 · Design by Mars")
                         .font(.title2.weight(.semibold))
                     Text("\(store.preferences.provider.rawValue) · 自选 \(store.watchlist.count) 只 · 持仓 \(store.positionCount) 只 · \(store.connectionMessage)")
                         .foregroundStyle(.secondary)
@@ -163,6 +206,19 @@ struct StatusBadge: View {
         Label(status.title, systemImage: status.systemImage)
             .font(.caption.weight(.medium))
             .lineLimit(1)
+            .foregroundStyle(statusColor)
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case .buyAlert: .green
+        case .riskReduction: .red
+        case .profitTaking: .orange
+        case .watch: .yellow
+        case .dataShort: .orange
+        case .unavailable: .red
+        default: .secondary
+        }
     }
 }
 
@@ -198,48 +254,60 @@ struct WatchlistView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
+                    .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(min: 130, ideal: 190)
 
                 TableColumn("最新价") { signal in
                     Text(signal.currentPrice.currencyText).monospacedDigit()
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(90)
 
                 TableColumn("持仓状态") { signal in
-                    if store.hasPosition(signal.symbol) {
-                        Label("持仓", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Text("未持仓").foregroundStyle(.secondary)
+                    Group {
+                        if store.hasPosition(signal.symbol) {
+                            Label("持仓", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        } else {
+                            Text("未持仓").foregroundStyle(.secondary)
+                        }
                     }
+                    .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(95)
 
                 TableColumn("数量") { signal in
-                    if let position = store.positions[signal.symbol], !position.isEmpty {
-                        Text("\(position.quantity.shareQuantityText) 股").monospacedDigit()
-                    } else {
-                        Text("—").foregroundStyle(.tertiary)
+                    Group {
+                        if let position = store.positions[signal.symbol], !position.isEmpty {
+                            Text("\(position.quantity.shareQuantityText) 股").monospacedDigit()
+                        } else {
+                            Text("—").foregroundStyle(.tertiary)
+                        }
                     }
+                    .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(85)
 
                 TableColumn("平均成本") { signal in
                     Text((store.positions[signal.symbol]?.averageCost).currencyText).monospacedDigit()
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(100)
 
                 TableColumn("持仓市值") { signal in
                     Text(marketValue(for: signal).currencyText).monospacedDigit()
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(105)
 
                 TableColumn("信号状态") { signal in
                     StatusBadge(status: signal.status)
+                        .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(110)
             }
+            .environment(\.defaultMinListRowHeight, store.preferences.tableRowHeight)
         }
     }
 
@@ -260,5 +328,31 @@ struct WatchlistView: View {
               let position = store.positions[signal.symbol],
               !position.isEmpty else { return nil }
         return price * position.quantity
+    }
+}
+
+private struct PriceMovementBackground: ViewModifier {
+    let movement: PriceMovement?
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, minHeight: 24, alignment: .center)
+            .padding(.horizontal, 3)
+            .background(backgroundColor, in: RoundedRectangle(cornerRadius: 4))
+            .animation(.easeOut(duration: 0.16), value: movement != nil)
+    }
+
+    private var backgroundColor: Color {
+        switch movement {
+        case .up: return .green.opacity(0.28)
+        case .down: return .red.opacity(0.28)
+        case .none: return .clear
+        }
+    }
+}
+
+private extension View {
+    func priceMovementBackground(_ movement: PriceMovement?) -> some View {
+        modifier(PriceMovementBackground(movement: movement))
     }
 }

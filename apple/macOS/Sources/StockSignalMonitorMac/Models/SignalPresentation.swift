@@ -16,8 +16,8 @@ enum PresentationSignalStatus: String, Codable, CaseIterable, Sendable {
         case .dataShort: "历史不足"
         case .noSignal: "暂无信号"
         case .watch: "观察"
-        case .buyAlert: "突破加仓"
-        case .riskReduction: "风险减仓"
+        case .buyAlert: "买入提示"
+        case .riskReduction: "卖出提示"
         case .profitTaking: "盈利减仓"
         case .unavailable: "不可用"
         }
@@ -37,6 +37,11 @@ enum PresentationSignalStatus: String, Codable, CaseIterable, Sendable {
     }
 }
 
+enum PriceMovement: Sendable {
+    case up
+    case down
+}
+
 struct SignalPresentation: Identifiable, Hashable, Sendable {
     var id: String { symbol }
 
@@ -50,6 +55,10 @@ struct SignalPresentation: Identifiable, Hashable, Sendable {
     var status: PresentationSignalStatus
     var signalQuality: String
     var action: String
+    var buyProbability: Int?
+    var reduceProbability: Int?
+    var buyProbabilityLabel: String
+    var reduceProbabilityLabel: String
     var updatedAt: Date?
     var historyDays: Int
 
@@ -65,6 +74,10 @@ struct SignalPresentation: Identifiable, Hashable, Sendable {
             status: .loading,
             signalQuality: "—",
             action: "连接数据源后计算",
+            buyProbability: nil,
+            reduceProbability: nil,
+            buyProbabilityLabel: "等待",
+            reduceProbabilityLabel: "等待",
             updatedAt: nil,
             historyDays: 0
         )
@@ -96,5 +109,6 @@ enum SignalListScope: String, CaseIterable, Identifiable {
 enum SidebarSelection: Hashable {
     case overview
     case watchlist
+    case market
     case symbol(String)
 }

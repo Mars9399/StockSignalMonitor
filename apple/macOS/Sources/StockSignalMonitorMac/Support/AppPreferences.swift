@@ -13,6 +13,13 @@ final class AppPreferences {
         static let twsPort = "tws.port"
         static let twsClientID = "tws.clientID"
         static let twsAccountID = "tws.accountID"
+        static let windowWidth = "ui.windowWidth"
+        static let windowHeight = "ui.windowHeight"
+        static let interfaceScale = "ui.interfaceScale"
+        static let tableRowHeight = "ui.tableRowHeight"
+        static let logHeight = "ui.logHeight"
+        static let showActivityLog = "ui.showActivityLog"
+        static let autoStartMonitoring = "monitor.autoStart"
     }
 
     var provider: MarketDataProvider { didSet { defaults.set(provider.rawValue, forKey: Key.provider) } }
@@ -23,6 +30,13 @@ final class AppPreferences {
     var twsPort: Int { didSet { defaults.set(twsPort, forKey: Key.twsPort) } }
     var twsClientID: Int { didSet { defaults.set(twsClientID, forKey: Key.twsClientID) } }
     var twsAccountID: String { didSet { defaults.set(twsAccountID, forKey: Key.twsAccountID) } }
+    var windowWidth: Double { didSet { defaults.set(windowWidth, forKey: Key.windowWidth) } }
+    var windowHeight: Double { didSet { defaults.set(windowHeight, forKey: Key.windowHeight) } }
+    var interfaceScale: Double { didSet { defaults.set(interfaceScale, forKey: Key.interfaceScale) } }
+    var tableRowHeight: Double { didSet { defaults.set(tableRowHeight, forKey: Key.tableRowHeight) } }
+    var logHeight: Double { didSet { defaults.set(logHeight, forKey: Key.logHeight) } }
+    var showActivityLog: Bool { didSet { defaults.set(showActivityLog, forKey: Key.showActivityLog) } }
+    var autoStartMonitoring: Bool { didSet { defaults.set(autoStartMonitoring, forKey: Key.autoStartMonitoring) } }
 
     private let defaults: UserDefaults
 
@@ -36,6 +50,13 @@ final class AppPreferences {
         twsPort = defaults.object(forKey: Key.twsPort) as? Int ?? 7497
         twsClientID = defaults.object(forKey: Key.twsClientID) as? Int ?? 17
         twsAccountID = defaults.string(forKey: Key.twsAccountID) ?? ""
+        windowWidth = defaults.object(forKey: Key.windowWidth) as? Double ?? 1180
+        windowHeight = defaults.object(forKey: Key.windowHeight) as? Double ?? 760
+        interfaceScale = defaults.object(forKey: Key.interfaceScale) as? Double ?? 1
+        tableRowHeight = defaults.object(forKey: Key.tableRowHeight) as? Double ?? 32
+        logHeight = defaults.object(forKey: Key.logHeight) as? Double ?? 105
+        showActivityLog = defaults.object(forKey: Key.showActivityLog) as? Bool ?? true
+        autoStartMonitoring = defaults.object(forKey: Key.autoStartMonitoring) as? Bool ?? false
     }
 
     var riskConfiguration: RiskConfiguration {
@@ -66,5 +87,15 @@ final class AppPreferences {
             apiKey: apiKey,
             apiSecret: apiSecret
         )
+    }
+
+    func restoreInterfaceDefaults() {
+        windowWidth = 1180
+        windowHeight = 760
+        interfaceScale = 1
+        tableRowHeight = 32
+        logHeight = 105
+        showActivityLog = true
+        autoStartMonitoring = false
     }
 }

@@ -20,8 +20,9 @@ enum DisplayFormatting {
 
     static func statusTitle(_ status: SignalStatus?) -> String {
         switch status {
-        case .buyAlert: "突破提醒"
-        case .watch: "等待突破"
+        case .buyAlert: "买入提示"
+        case .sellAlert: "卖出提示"
+        case .watch: "等待触发"
         case .noSignal: "暂无信号"
         case .dataShort: "历史不足"
         case nil: "等待行情"
@@ -31,6 +32,7 @@ enum DisplayFormatting {
     static func statusColor(_ status: SignalStatus?) -> Color {
         switch status {
         case .buyAlert: .green
+        case .sellAlert: .red
         case .watch: .orange
         case .noSignal: .secondary
         case .dataShort: .purple
@@ -49,8 +51,10 @@ enum DisplayFormatting {
         case let .reduceAt3R(shares): "到达 3R 盈利点后减仓 \(shares) 股"
         case let .addAfterBreakout(maximumShares): "突破确认后最多加仓 \(maximumShares) 股"
         case let .openAfterBreakout(maximumShares): "突破确认后最多建立 \(maximumShares) 股观察仓"
+        case let .sellSignal(shares): "卖出提示：参考卖出 \(shares) 股"
+        case .sellSignalNoPosition: "卖出提示：当前无持仓"
         case let .wait(candidateMaximumShares): "等待突破；候选仓位上限 \(candidateMaximumShares) 股"
-        case .hold: "继续持有，留意风险线与盈利减仓点"
+        case .hold: "继续持有，等待买入或卖出触发点"
         case nil: "等待足够行情后生成意见"
         }
     }

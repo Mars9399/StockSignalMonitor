@@ -51,9 +51,10 @@ final class CoreMonitoringBackend: MonitoringBackend {
             var lastMessage = ""
             while !Task.isCancelled {
                 let message = store.connectionMessage
+                let presentations = Self.presentations(from: store)
                 pair.continuation.yield(
                     .init(
-                        signals: store.stocks.map(Self.present),
+                        signals: presentations,
                         message: message == lastMessage ? nil : message
                     )
                 )
@@ -61,7 +62,7 @@ final class CoreMonitoringBackend: MonitoringBackend {
 
                 if !store.isMonitoring, store.lastUpdated != nil || store.errorMessage != nil {
                     if let error = store.errorMessage {
-                        pair.continuation.yield(.init(signals: store.stocks.map(Self.present), message: "行情错误：\(error)"))
+                        pair.continuation.yield(.init(signals: presentations, message: "行情错误：\(error)"))
                     }
                     break
                 }
@@ -109,9 +110,31 @@ final class CoreMonitoringBackend: MonitoringBackend {
         }
     }
 
-    private static func present(_ stock: MonitoredStock) -> SignalPresentation {
+    private static func presentations(from store: StockSignalCore.MonitorStore) -> [SignalPresentation] {
+        let portfolioValue = store.stocks.reduce(0) { total, stock in
+            let referencePrice = stock.quote?.price ?? stock.position.averageCost
+            return total + max(0, stock.position.quantity) * max(0, referencePrice)
+        }
+        return store.stocks.map {
+            present($0, riskSettings: store.riskSettings, portfolioValue: portfolioValue)
+        }
+    }
+
+    private static func present(
+        _ stock: MonitoredStock,
+        riskSettings: RiskSettings,
+        portfolioValue: Double
+    ) -> SignalPresentation {
         let levels = stock.levels
         let plan = stock.plan
+        let score = levels.map {
+            ActionProbabilityEstimator.estimate(
+                levels: $0,
+                position: stock.position,
+                settings: riskSettings,
+                portfolioValue: portfolioValue
+            )
+        }
         return .init(
             symbol: stock.symbol,
             companyName: CompanyNameResolver.resolve(symbol: stock.symbol, suppliedName: stock.name),
@@ -121,8 +144,14 @@ final class CoreMonitoringBackend: MonitoringBackend {
             profitTarget2R: positive(plan?.profitTarget2R),
             profitTarget3R: positive(plan?.profitTarget3R),
             status: presentationStatus(levels: levels, plan: plan, error: stock.errorMessage),
-            signalQuality: levels.map { "\($0.quality.rawValue) · \($0.modelName)" } ?? "—",
+            signalQuality: levels.map {
+                "\($0.quality.rawValue) · \($0.modelName) · 5日动量 \(String(format: \"%.1f%%\", $0.momentum5DayPercent)) · RSI \(String(format: \"%.0f\", $0.rsi14))"
+            } ?? "—",
             action: actionText(plan?.action),
+            buyProbability: levels?.isReady == true ? score?.buyProbability : nil,
+            reduceProbability: levels?.isReady == true ? score?.reduceProbability : nil,
+            buyProbabilityLabel: score?.buyLabel ?? "等待",
+            reduceProbabilityLabel: score?.reduceLabel ?? "等待",
             updatedAt: stock.quote?.timestamp,
             historyDays: levels?.historyDays ?? 0
         )
@@ -137,7 +166,7 @@ final class CoreMonitoringBackend: MonitoringBackend {
         guard let levels else { return .loading }
         if let plan {
             switch plan.action {
-            case .reduceForRisk, .reduceForExposure: return .riskReduction
+            case .reduceForRisk, .reduceForExposure, .sellSignal, .sellSignalNoPosition: return .riskReduction
             case .reduceAt2R, .reduceAt3R: return .profitTaking
             default: break
             }
@@ -145,6 +174,7 @@ final class CoreMonitoringBackend: MonitoringBackend {
         switch levels.status {
         case .dataShort: return .dataShort
         case .buyAlert: return .buyAlert
+        case .sellAlert: return .riskReduction
         case .watch: return .watch
         case .noSignal: return .noSignal
         }
@@ -170,7 +200,11 @@ final class CoreMonitoringBackend: MonitoringBackend {
         case let .addAfterBreakout(maximumShares):
             return "突破确认后，最多参考加仓 \(maximumShares) 股"
         case let .openAfterBreakout(maximumShares):
-            return "突破确认后，最多参考买入 \(maximumShares) 股"
+            return "买入提示：最多参考买入 \(maximumShares) 股"
+        case let .sellSignal(shares):
+            return "卖出提示：参考卖出 \(shares) 股"
+        case .sellSignalNoPosition:
+            return "卖出提示：当前无持仓"
         case let .wait(candidateMaximumShares):
             return "继续观察；触发后候选上限 \(candidateMaximumShares) 股"
         case .hold:

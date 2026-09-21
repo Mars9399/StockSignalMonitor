@@ -29,19 +29,23 @@ public enum DataReliability {
     public static func reason(quote: StockQuote, history: [DailyBar], now: Date = .now) -> String? {
         guard quote.price.isFinite, quote.price > 0 else { return "价格无效" }
         let age = now.timeIntervalSince(quote.timestamp)
-        guard age >= -30, age <= 120 else { return "行情过期或时间异常（超过 120 秒）" }
+        guard age >= -30, age <= 180 else { return "行情过期或时间异常（超过 180 秒）" }
         let components = calendar.dateComponents([.weekday, .hour, .minute], from: now)
         let minutes = components.hour! * 60 + components.minute!
-        guard (2...6).contains(components.weekday!), (570..<960).contains(minutes) else {
-            return "正常交易时段外"
+        guard (2...6).contains(components.weekday!), (240..<1200).contains(minutes) else {
+            return "美股盘前、正常交易及盘后时段外"
         }
-        var expected = calendar.date(byAdding: .day, value: -1, to: now)!
-        while [1, 7].contains(calendar.component(.weekday, from: expected)) {
-            expected = calendar.date(byAdding: .day, value: -1, to: expected)!
-        }
-        guard let last = history.last, barDay(last.date) == day(expected) else {
+        guard let last = history.last else {
             return "日线未更新或交易日待核实"
         }
+        let parts = barDay(last.date).split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3,
+              let lastDay = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else {
+            return "日线未更新或交易日待核实"
+        }
+        let currentDay = calendar.startOfDay(for: now)
+        let ageDays = calendar.dateComponents([.day], from: lastDay, to: currentDay).day ?? -1
+        guard (1...4).contains(ageDays) else { return "日线未更新或交易日待核实" }
         return nil
     }
 }

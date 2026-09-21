@@ -5,10 +5,11 @@ struct StockSignalMonitorMacApp: App {
     @State private var store = MacMonitorStore()
 
     var body: some Scene {
-        WindowGroup("美股信号监控", id: "monitor") {
+        WindowGroup("美股信号监控 · Design by Mars", id: "monitor") {
             ContentView(store: store)
                 .frame(minWidth: 920, minHeight: 600)
         }
+        .defaultSize(width: store.preferences.windowWidth, height: store.preferences.windowHeight)
         .commands {
             MonitorCommands(store: store)
         }

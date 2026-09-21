@@ -26,7 +26,7 @@ struct PositionEditorView: View {
         NavigationStack {
             Form {
                 Section("当前持仓") {
-                    TextField("初始风险线（低于成本；留空仅观察）", value: $initialStop, format: .number)
+                    TextField("可选保护线（低于成本）", value: $initialStop, format: .number)
                         .keyboardType(.decimalPad)
                     TextField("平均成本（美元）", value: $averageCost, format: .number.precision(.fractionLength(0...4)))
                         .keyboardType(.decimalPad)
@@ -37,7 +37,7 @@ struct PositionEditorView: View {
                 }
 
                 Section {
-                    Text("这些数据只用于计算风险线、盈利减仓点和仓位意见，不会发送给券商下单。")
+                    Text("这些数据只用于估算保护线和参考股数；留空保护线仍会提供价格通道买卖提示，不会发送订单。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

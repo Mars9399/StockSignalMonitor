@@ -16,16 +16,85 @@ struct SettingsView: View {
             RiskSettingsPane(preferences: store.preferences, restart: restart)
                 .tabItem { Label("风控", systemImage: "shield") }
 
+            InterfaceSettingsPane(preferences: store.preferences)
+                .tabItem { Label("界面", systemImage: "slider.horizontal.3") }
+
             ReadOnlySettingsPane()
                 .tabItem { Label("安全", systemImage: "lock.shield") }
         }
-        .frame(width: 560, height: 460)
+        .frame(width: 620, height: 540)
         .scenePadding()
     }
 
     private func restart() {
         guard store.isMonitoring else { return }
         store.refresh()
+    }
+}
+
+private struct InterfaceSettingsPane: View {
+    @Bindable var preferences: AppPreferences
+
+    var body: some View {
+        Form {
+            Section("初始窗口") {
+                HStack {
+                    Text("宽度")
+                    Slider(value: $preferences.windowWidth, in: 920...2000, step: 20)
+                    Text("\(Int(preferences.windowWidth))")
+                        .monospacedDigit()
+                        .frame(width: 48, alignment: .trailing)
+                }
+                HStack {
+                    Text("高度")
+                    Slider(value: $preferences.windowHeight, in: 600...1400, step: 20)
+                    Text("\(Int(preferences.windowHeight))")
+                        .monospacedDigit()
+                        .frame(width: 48, alignment: .trailing)
+                }
+                Text("初始窗口大小在下次新建主窗口时生效。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("文字与列表") {
+                HStack {
+                    Text("文字缩放")
+                    Slider(value: $preferences.interfaceScale, in: 0.8...1.4, step: 0.05)
+                    Text("\(Int((preferences.interfaceScale * 100).rounded()))%")
+                        .monospacedDigit()
+                        .frame(width: 48, alignment: .trailing)
+                }
+                HStack {
+                    Text("列表行高")
+                    Slider(value: $preferences.tableRowHeight, in: 24...56, step: 2)
+                    Text("\(Int(preferences.tableRowHeight))")
+                        .monospacedDigit()
+                        .frame(width: 48, alignment: .trailing)
+                }
+                HStack {
+                    Text("日志高度")
+                    Slider(value: $preferences.logHeight, in: 60...240, step: 5)
+                    Text("\(Int(preferences.logHeight))")
+                        .monospacedDigit()
+                        .frame(width: 48, alignment: .trailing)
+                }
+            }
+
+            Section("启动与显示") {
+                Toggle("显示运行日志", isOn: $preferences.showActivityLog)
+                Toggle("启动应用后自动开始监控", isOn: $preferences.autoStartMonitoring)
+            }
+
+            Section {
+                HStack {
+                    Spacer()
+                    Button("恢复界面默认值") { preferences.restoreInterfaceDefaults() }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
     }
 }
 
@@ -132,7 +201,7 @@ private struct RiskSettingsPane: View {
             }
 
             Section {
-                Text("系统会根据风险额度、风险减仓点与单股上限计算参考加减仓股数。")
+                Text("系统会根据风险额度、价格通道卖出点与单股上限估算参考股数；这些参数不改变买卖方向。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

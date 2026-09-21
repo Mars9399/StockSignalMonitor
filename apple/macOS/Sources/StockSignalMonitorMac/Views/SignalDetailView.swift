@@ -17,22 +17,28 @@ struct SignalDetailView: View {
                         systemImage: "waveform.path.ecg"
                     )
                     MetricCard(
-                        title: "买入/突破加仓点",
+                        title: "突破买入线",
                         value: signal.buyTrigger.currencyText,
-                        detail: "到价并满足趋势条件后提示",
+                        detail: "实时价格向上触发时提示",
                         systemImage: "arrow.up.right"
                     )
                     MetricCard(
-                        title: "风险减仓点",
+                        title: "卖出触发点",
                         value: signal.riskReductionPoint.currencyText,
-                        detail: "跌破后按仓位规则减仓",
+                        detail: "实时价格向下触发时提示",
                         systemImage: "shield.lefthalf.filled"
                     )
                     MetricCard(
-                        title: "盈利减仓点 2R / 3R",
-                        value: "\(signal.profitTarget2R.currencyText) / \(signal.profitTarget3R.currencyText)",
-                        detail: "分批锁定收益的参考区间",
-                        systemImage: "dollarsign.arrow.circlepath"
+                        title: "即时买入概率*",
+                        value: probabilityText(signal.buyProbability, label: signal.buyProbabilityLabel),
+                        detail: "价格、趋势、动量及当前仓位综合评分",
+                        systemImage: "chart.line.uptrend.xyaxis"
+                    )
+                    MetricCard(
+                        title: "建议减持概率*",
+                        value: probabilityText(signal.reduceProbability, label: signal.reduceProbabilityLabel),
+                        detail: "仅在有持仓时结合风险线与账户暴露评分",
+                        systemImage: "chart.line.downtrend.xyaxis"
                     )
                 }
 
@@ -55,7 +61,7 @@ struct SignalDetailView: View {
                 }
 
                 Label(
-                    "本应用仅显示行情、信号和仓位参考，不包含任何下单接口。",
+                    "* 概率为规则评分，不是历史胜率或收益保证。本应用只显示行情、信号和仓位参考，不包含任何下单接口。",
                     systemImage: "lock.shield"
                 )
                 .font(.callout)
@@ -63,6 +69,10 @@ struct SignalDetailView: View {
             }
             .padding()
         }
+    }
+
+    private func probabilityText(_ score: Int?, label: String) -> String {
+        score.map { "\($0)% · \(label)" } ?? "—"
     }
 
     private var header: some View {
@@ -166,10 +176,10 @@ private struct PositionEditorCard: View {
 
                 Spacer()
 
-                LabeledContent("初始风险线") {
+                LabeledContent("可选保护线") {
                     TextField("留空仅观察", value: $initialStop, format: .number)
                         .frame(width: 100)
-                        .help("低于持仓成本。保存后固定风险线与 2R/3R；提示不代表已执行。")
+                        .help("低于持仓成本时可收紧卖出点；留空仍按价格通道提示，且不会执行订单。")
                 }
 
                 Button("清除") {
