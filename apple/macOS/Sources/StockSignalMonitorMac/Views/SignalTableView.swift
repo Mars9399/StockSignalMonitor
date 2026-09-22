@@ -139,7 +139,7 @@ private struct MonitorSummaryHeader: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("美股信号监控 · Design by Mars")
+                    Text("美股信号监控 · \(AppVersion.display) · Design by Mars")
                         .font(.title2.weight(.semibold))
                     Text("\(store.preferences.provider.rawValue) · 自选 \(store.watchlist.count) 只 · 持仓 \(store.positionCount) 只 · \(store.connectionMessage)")
                         .foregroundStyle(.secondary)

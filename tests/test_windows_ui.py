@@ -27,6 +27,7 @@ class WindowsUITests(unittest.TestCase):
                      patch.object(gui, "read_watchlist", return_value=["MSFT"]), \
                      patch.object(gui.messagebox, "askyesno", return_value=True):
                     app = gui.SignalMonitorApp(root)
+                    self.assertIn(f"v{gui.APP_VERSION}", root.title())
                     style = gui.ttk.Style()
                     selected_font = root.tk.splitlist(
                         style.lookup("TNotebook.Tab", "font", ("selected",))

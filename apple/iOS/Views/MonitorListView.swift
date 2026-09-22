@@ -44,7 +44,7 @@ struct MonitorListView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("美股信号监控 · Design by Mars")
+        .navigationTitle("美股信号监控 · \(AppVersion.display) · Design by Mars")
         .navigationDestination(for: String.self) { symbol in
             StockDetailView(symbol: symbol)
         }

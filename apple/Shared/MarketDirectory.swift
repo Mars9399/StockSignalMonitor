@@ -43,7 +43,7 @@ public actor YahooMarketDirectoryService {
         var request = URLRequest(url: components.url!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.1", forHTTPHeaderField: "User-Agent")
         let query: [String: Any] = [
             "operator": "AND",
             "operands": [
@@ -83,7 +83,7 @@ public actor YahooMarketDirectoryService {
             .init(name: "region", value: "US")
         ]
         var request = URLRequest(url: components.url!)
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.1", forHTTPHeaderField: "User-Agent")
         let data = try await responseData(for: request)
         let response = try JSONDecoder().decode(SearchEnvelope.self, from: data)
         let entries = response.quotes
@@ -94,7 +94,7 @@ public actor YahooMarketDirectoryService {
 
     private func yahooCrumb() async throws -> String {
         var request = URLRequest(url: URL(string: "https://query1.finance.yahoo.com/v1/test/getcrumb")!)
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.1", forHTTPHeaderField: "User-Agent")
         let data = try await responseData(for: request)
         guard let crumb = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !crumb.isEmpty else { throw MarketDataError.invalidResponse }

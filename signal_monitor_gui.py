@@ -29,6 +29,7 @@ from tws_positions import fetch_positions, merge_positions
 from reliability import observation_reason, NEW_YORK
 
 
+APP_VERSION = "2.5.1"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 BASE_DIR = (
@@ -289,7 +290,7 @@ class SignalMonitorApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.ui_settings = read_ui_settings()
-        self.root.title("美股买卖点与仓位监控 · Design by Mars · 只读模式")
+        self.root.title(f"美股买卖点与仓位监控 · v{APP_VERSION} · Design by Mars · 只读模式")
         self.root.geometry(f"{self.ui_settings['window_width']}x{self.ui_settings['window_height']}")
         self.root.minsize(980, 620)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -423,7 +424,11 @@ class SignalMonitorApp:
 
         header = ttk.Frame(outer, style="App.TFrame")
         header.pack(fill="x", pady=(0, 18))
-        ttk.Label(header, text="美股买卖点与仓位监控 · Design by Mars", style="Title.TLabel").pack(side="left")
+        ttk.Label(
+            header,
+            text=f"美股买卖点与仓位监控 · v{APP_VERSION} · Design by Mars",
+            style="Title.TLabel",
+        ).pack(side="left")
         ttk.Label(header, text="只读 · 永不下单", style="Safe.TLabel").pack(side="right", padx=(8, 0))
         ttk.Label(header, textvariable=self.feed_var, style="Feed.TLabel").pack(side="right")
 
@@ -682,7 +687,7 @@ class SignalMonitorApp:
 
         dialog = tk.Toplevel(self.root)
         self.ui_settings_window = dialog
-        dialog.title("界面设置 · Design by Mars")
+        dialog.title(f"界面设置 · v{APP_VERSION} · Design by Mars")
         dialog.geometry("600x610")
         dialog.resizable(False, False)
         dialog.configure(bg="#18243a")
@@ -1346,7 +1351,7 @@ class SignalMonitorApp:
             existing["window"].destroy()
 
         window = tk.Toplevel(self.root)
-        window.title(f"{symbol} · TWS 5分钟行情图 · Design by Mars")
+        window.title(f"{symbol} · TWS 5分钟行情图 · v{APP_VERSION} · Design by Mars")
         window.geometry("1040x650")
         window.minsize(760, 480)
         window.configure(bg="#18243a")
