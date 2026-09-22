@@ -11,7 +11,7 @@ struct AddSymbolView: View {
             Text("添加股票")
                 .font(.title2.weight(.semibold))
 
-            Text("输入美股代码，例如 AAPL 或 BRK.B。")
+            Text("输入股票代码，例如 AAPL、BRK.B 或港股 0700.HK。")
                 .foregroundStyle(.secondary)
 
             TextField("股票代码", text: $symbol)

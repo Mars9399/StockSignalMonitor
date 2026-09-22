@@ -15,7 +15,7 @@ struct WatchlistEditorView: View {
         List {
             Section("添加股票") {
                 HStack {
-                    TextField("例如 AAPL", text: $newSymbol)
+                    TextField("例如 AAPL 或 0700.HK", text: $newSymbol)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                         .focused($symbolFieldFocused)

@@ -3,6 +3,15 @@ import Foundation
 import FoundationNetworking
 #endif
 
+public enum MarketRegion: String, Codable, CaseIterable, Hashable, Sendable {
+    case us
+    case hk
+
+    public var yahooLocale: String { self == .hk ? "HK" : "US" }
+    public var displayName: String { self == .hk ? "港股" : "美股" }
+    public var defaultCurrency: String { self == .hk ? "HKD" : "USD" }
+}
+
 public struct MarketDirectoryEntry: Codable, Hashable, Identifiable, Sendable {
     public var id: String { symbol }
     public let symbol: String
@@ -12,6 +21,7 @@ public struct MarketDirectoryEntry: Codable, Hashable, Identifiable, Sendable {
     public let changePercent: Double
     public let volume: Double
     public let marketCap: Double
+    public let currency: String
 }
 
 public struct MarketDirectoryPage: Codable, Hashable, Sendable {
@@ -19,6 +29,7 @@ public struct MarketDirectoryPage: Codable, Hashable, Sendable {
     public let page: Int
     public let pageSize: Int
     public let total: Int
+    public let market: MarketRegion
 }
 
 public actor YahooMarketDirectoryService {
@@ -28,7 +39,11 @@ public actor YahooMarketDirectoryService {
         self.session = session
     }
 
-    public func page(_ page: Int, pageSize: Int = 100) async throws -> MarketDirectoryPage {
+    public func page(
+        _ page: Int,
+        market: MarketRegion = .us,
+        pageSize: Int = 100
+    ) async throws -> MarketDirectoryPage {
         let safePage = max(0, page)
         let safeSize = min(250, max(25, pageSize))
         let crumb = try await yahooCrumb()
@@ -36,18 +51,18 @@ public actor YahooMarketDirectoryService {
         components.queryItems = [
             .init(name: "crumb", value: crumb),
             .init(name: "lang", value: "en-US"),
-            .init(name: "region", value: "US"),
+            .init(name: "region", value: market.yahooLocale),
             .init(name: "corsDomain", value: "finance.yahoo.com"),
             .init(name: "formatted", value: "false")
         ]
         var request = URLRequest(url: components.url!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
         let query: [String: Any] = [
             "operator": "AND",
             "operands": [
-                ["operator": "EQ", "operands": ["region", "us"] as [Any]] as [String: Any],
+                ["operator": "EQ", "operands": ["region", market.rawValue] as [Any]] as [String: Any],
                 ["operator": "GT", "operands": ["intradayprice", 0] as [Any]] as [String: Any]
             ]
         ]
@@ -66,35 +81,47 @@ public actor YahooMarketDirectoryService {
         let result = try JSONDecoder().decode(ScreenEnvelope.self, from: data).finance.result.first
         guard let result else { throw MarketDataError.invalidResponse }
         return .init(
-            entries: result.quotes.compactMap(\.directoryEntry),
+            entries: result.quotes.compactMap { $0.directoryEntry(defaultCurrency: market.defaultCurrency) },
             page: safePage,
             pageSize: safeSize,
-            total: result.total
+            total: result.total,
+            market: market
         )
     }
 
-    public func search(_ text: String, limit: Int = 100) async throws -> MarketDirectoryPage {
+    public func search(
+        _ text: String,
+        market: MarketRegion = .us,
+        limit: Int = 100
+    ) async throws -> MarketDirectoryPage {
         var components = URLComponents(string: "https://query1.finance.yahoo.com/v1/finance/search")!
         components.queryItems = [
             .init(name: "q", value: text),
             .init(name: "quotesCount", value: String(min(100, max(10, limit)))),
             .init(name: "newsCount", value: "0"),
             .init(name: "lang", value: "en-US"),
-            .init(name: "region", value: "US")
+            .init(name: "region", value: market.yahooLocale)
         ]
         var request = URLRequest(url: components.url!)
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
         let data = try await responseData(for: request)
         let response = try JSONDecoder().decode(SearchEnvelope.self, from: data)
         let entries = response.quotes
             .filter { ["EQUITY", "ETF"].contains($0.quoteType?.uppercased() ?? "") }
-            .compactMap(\.directoryEntry)
-        return .init(entries: entries, page: 0, pageSize: limit, total: entries.count)
+            .filter { $0.matches(market: market) }
+            .compactMap { $0.directoryEntry(defaultCurrency: market.defaultCurrency) }
+        return .init(
+            entries: entries,
+            page: 0,
+            pageSize: limit,
+            total: entries.count,
+            market: market
+        )
     }
 
     private func yahooCrumb() async throws -> String {
         var request = URLRequest(url: URL(string: "https://query1.finance.yahoo.com/v1/test/getcrumb")!)
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
         let data = try await responseData(for: request)
         guard let crumb = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !crumb.isEmpty else { throw MarketDataError.invalidResponse }
@@ -133,8 +160,17 @@ private struct DirectoryQuote: Decodable {
     let regularMarketChangePercent: Double?
     let regularMarketVolume: Double?
     let marketCap: Double?
+    let currency: String?
 
-    var directoryEntry: MarketDirectoryEntry? {
+    func matches(market: MarketRegion) -> Bool {
+        let normalizedSymbol = symbol?.uppercased() ?? ""
+        let normalizedExchange = (exchange ?? exchDisp ?? fullExchangeName ?? "").uppercased()
+        let isHongKong = normalizedSymbol.hasSuffix(".HK")
+            || ["HKG", "HKSE", "HONG KONG"].contains(normalizedExchange)
+        return market == .hk ? isHongKong : !isHongKong
+    }
+
+    func directoryEntry(defaultCurrency: String) -> MarketDirectoryEntry? {
         guard let symbol, !symbol.isEmpty else { return nil }
         let normalizedSymbol = symbol.uppercased()
         let displayName = shortName ?? longName ?? shortname ?? longname ?? symbol
@@ -150,7 +186,8 @@ private struct DirectoryQuote: Decodable {
             price: price,
             changePercent: changePercent,
             volume: volume,
-            marketCap: capitalization
+            marketCap: capitalization,
+            currency: currency ?? defaultCurrency
         )
     }
 }

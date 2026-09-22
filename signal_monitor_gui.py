@@ -29,7 +29,7 @@ from tws_positions import fetch_positions, merge_positions
 from reliability import observation_reason, NEW_YORK
 
 
-APP_VERSION = "2.5.1"
+APP_VERSION = "2.5.2"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 BASE_DIR = (
@@ -70,7 +70,57 @@ DEFAULT_NAMES = {
     "SPY": "SPDR S&P 500 ETF",
     "QQQ": "Invesco QQQ Trust",
 }
-SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,11}$")
+SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,11}$")
+PRICE_UP_COLOR = "#38d982"
+PRICE_DOWN_COLOR = "#ff6678"
+OVERVIEW_ROW_COLORS = {
+    "BUY_ALERT": ("#91f5c4", "#194c3d"),
+    "SELL_ALERT": ("#ffadb5", "#572e3a"),
+    "NEAR": ("#9be7ff", "#24485a"),
+    "WATCH": ("#ffe08a", "#514424"),
+    "NO_SIGNAL": ("#c1cddd", "#344158"),
+    "DATA_SHORT": ("#ffc3a6", "#563d34"),
+    "ERROR": ("#ffc0c6", "#572e3a"),
+}
+WATCHLIST_ROW_COLORS = {
+    "HELD": ("#91f5c4", "#194c3d"),
+    "WATCHLIST": ("#f0f5fb", "#24334d"),
+}
+MOVER_ROW_COLORS = {
+    "BUY": ("#91f5c4", "#194c3d"),
+    "NEAR": ("#9be7ff", "#24485a"),
+    "EXTENDED": ("#ffe08a", "#514424"),
+    "WAIT": ("#d6e0ec", "#344158"),
+    "AVOID": ("#ffadb5", "#572e3a"),
+    "OBSERVE": ("#c1cddd", "#3a465c"),
+    "ERROR": ("#ffc3a6", "#563d34"),
+}
+MARKET_ROW_COLORS = {
+    "UP": ("#dffff0", "#245b43"),
+    "DOWN": ("#ffe3e7", "#693541"),
+    "FLAT": ("#e5edf7", "#344158"),
+}
+MARKET_LABELS = {"us": "美股", "hk": "港股"}
+
+
+def configure_directional_row_tags(tree: ttk.Treeview, palette: dict[str, tuple[str, str]]) -> None:
+    """Create one concrete tag per base state/direction to avoid Tk tag conflicts."""
+    for base_tag, (foreground, background) in palette.items():
+        tree.tag_configure(base_tag, foreground=foreground, background=background)
+        tree.tag_configure(
+            f"{base_tag}_PRICE_UP",
+            foreground=PRICE_UP_COLOR,
+            background=background,
+        )
+        tree.tag_configure(
+            f"{base_tag}_PRICE_DOWN",
+            foreground=PRICE_DOWN_COLOR,
+            background=background,
+        )
+
+
+def directional_row_tag(base_tag: str, movement_tag: str) -> str:
+    return f"{base_tag}_{movement_tag}" if movement_tag else base_tag
 
 
 def read_ui_settings() -> dict:
@@ -561,15 +611,7 @@ class SignalMonitorApp:
         for column in columns:
             self.tree.heading(column, text=headings[column])
             self.tree.column(column, width=widths[column], anchor="center")
-        self.tree.tag_configure("BUY_ALERT", foreground="#91f5c4", background="#194c3d")
-        self.tree.tag_configure("SELL_ALERT", foreground="#ffadb5", background="#572e3a")
-        self.tree.tag_configure("NEAR", foreground="#9be7ff", background="#24485a")
-        self.tree.tag_configure("WATCH", foreground="#ffe08a", background="#514424")
-        self.tree.tag_configure("NO_SIGNAL", foreground="#c1cddd", background="#344158")
-        self.tree.tag_configure("DATA_SHORT", foreground="#ffc3a6", background="#563d34")
-        self.tree.tag_configure("ERROR", foreground="#ffc0c6", background="#572e3a")
-        self.tree.tag_configure("PRICE_UP", foreground="#38d982")
-        self.tree.tag_configure("PRICE_DOWN", foreground="#ff6678")
+        configure_directional_row_tags(self.tree, OVERVIEW_ROW_COLORS)
         overview_horizontal = ttk.Scrollbar(table_card, orient="horizontal", command=self.tree.xview)
         overview_vertical = ttk.Scrollbar(table_card, orient="vertical", command=self.tree.yview)
         self.tree.configure(xscrollcommand=overview_horizontal.set, yscrollcommand=overview_vertical.set)
@@ -585,9 +627,7 @@ class SignalMonitorApp:
         for column, title in zip(watch_columns, ("股票", "名称", "最新价", "持仓状态", "数量", "平均成本", "持仓市值")):
             self.watch_tree.heading(column, text=title)
             self.watch_tree.column(column, width=140, anchor="center")
-        self.watch_tree.tag_configure("held", foreground="#91f5c4", background="#194c3d")
-        self.watch_tree.tag_configure("PRICE_UP", foreground="#38d982")
-        self.watch_tree.tag_configure("PRICE_DOWN", foreground="#ff6678")
+        configure_directional_row_tags(self.watch_tree, WATCHLIST_ROW_COLORS)
         self.watch_tree.pack(fill="both", expand=True)
         self.watch_tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
@@ -816,10 +856,14 @@ class SignalMonitorApp:
         tables.pack(fill="both", expand=True)
         self.gainers_tree = self._create_mover_table(tables, "▲ 暴涨 TOP10", "#91f5c4")
         self.losers_tree = self._create_mover_table(tables, "▼ 暴跌 TOP10", "#ffadb5")
-        self.gainers_tree.tag_configure("WAIT", foreground="#d8f3eb", background="#29474c")
-        self.gainers_tree.tag_configure("OBSERVE", foreground="#c8e7df", background="#304950")
-        self.losers_tree.tag_configure("WAIT", foreground="#f2dce2", background="#493843")
-        self.losers_tree.tag_configure("OBSERVE", foreground="#ebcbd3", background="#4d3641")
+        configure_directional_row_tags(
+            self.gainers_tree,
+            {"WAIT": ("#d8f3eb", "#29474c"), "OBSERVE": ("#c8e7df", "#304950")},
+        )
+        configure_directional_row_tags(
+            self.losers_tree,
+            {"WAIT": ("#f2dce2", "#493843"), "OBSERVE": ("#ebcbd3", "#4d3641")},
+        )
         self.gainers_tree.bind("<<TreeviewSelect>>", lambda event: self._on_mover_select(event, self.losers_tree))
         self.losers_tree.bind("<<TreeviewSelect>>", lambda event: self._on_mover_select(event, self.gainers_tree))
 
@@ -843,18 +887,7 @@ class SignalMonitorApp:
         for column, label, width in zip(columns, headings, widths):
             tree.heading(column, text=label)
             tree.column(column, width=width, minwidth=width, anchor="center")
-        for tag, colors in {
-            "BUY": ("#91f5c4", "#194c3d"),
-            "NEAR": ("#9be7ff", "#24485a"),
-            "EXTENDED": ("#ffe08a", "#514424"),
-            "WAIT": ("#d6e0ec", "#344158"),
-            "AVOID": ("#ffadb5", "#572e3a"),
-            "OBSERVE": ("#c1cddd", "#3a465c"),
-            "ERROR": ("#ffc3a6", "#563d34"),
-        }.items():
-            tree.tag_configure(tag, foreground=colors[0], background=colors[1])
-        tree.tag_configure("PRICE_UP", foreground="#38d982")
-        tree.tag_configure("PRICE_DOWN", foreground="#ff6678")
+        configure_directional_row_tags(tree, MOVER_ROW_COLORS)
         horizontal = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
         vertical = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         tree.configure(xscrollcommand=horizontal.set, yscrollcommand=vertical.set)
@@ -896,10 +929,23 @@ class SignalMonitorApp:
         toolbar.pack(fill="x", pady=(0, 8))
         self.market_directory_status_var = tk.StringVar(value="分页浏览 Yahoo 美股市场；右键所选股票可加入自选")
         ttk.Label(toolbar, textvariable=self.market_directory_status_var, style="Card.TLabel").pack(side="left")
+        self.market_directory_market_var = tk.StringVar(value="美股")
+        self.market_directory_market_combo = ttk.Combobox(
+            toolbar,
+            textvariable=self.market_directory_market_var,
+            values=tuple(MARKET_LABELS.values()),
+            width=6,
+            state="readonly",
+        )
+        self.market_directory_market_combo.pack(side="left", padx=(14, 5), ipady=4)
+        self.market_directory_market_combo.bind(
+            "<<ComboboxSelected>>",
+            self.on_market_directory_market_changed,
+        )
         self.market_directory_search_var = tk.StringVar()
         search = self._dark_entry(toolbar, 24)
         search.configure(textvariable=self.market_directory_search_var)
-        search.pack(side="left", padx=(14, 5), ipady=4)
+        search.pack(side="left", padx=(5, 5), ipady=4)
         search.bind("<Return>", lambda _event: self.search_market_directory())
         ttk.Button(toolbar, text="搜索代码/名称", style="Secondary.TButton", command=self.search_market_directory).pack(side="left")
         ttk.Button(toolbar, text="加入自选", style="Accent.TButton", command=self.add_selected_market_symbol).pack(side="right", padx=(6, 0))
@@ -922,11 +968,7 @@ class SignalMonitorApp:
         for column, heading, width in zip(columns, headings, widths):
             self.market_directory_tree.heading(column, text=heading)
             self.market_directory_tree.column(column, width=width, anchor="center")
-        self.market_directory_tree.tag_configure("UP", foreground="#dffff0", background="#245b43")
-        self.market_directory_tree.tag_configure("DOWN", foreground="#ffe3e7", background="#693541")
-        self.market_directory_tree.tag_configure("FLAT", foreground="#e5edf7", background="#344158")
-        self.market_directory_tree.tag_configure("PRICE_UP", foreground="#38d982")
-        self.market_directory_tree.tag_configure("PRICE_DOWN", foreground="#ff6678")
+        configure_directional_row_tags(self.market_directory_tree, MARKET_ROW_COLORS)
         horizontal = ttk.Scrollbar(self.market_directory_card, orient="horizontal", command=self.market_directory_tree.xview)
         vertical = ttk.Scrollbar(self.market_directory_card, orient="vertical", command=self.market_directory_tree.yview)
         self.market_directory_tree.configure(xscrollcommand=horizontal.set, yscrollcommand=vertical.set)
@@ -942,17 +984,28 @@ class SignalMonitorApp:
     def _current_market_page(self) -> int:
         return self.market_directory_page.page if self.market_directory_page else 0
 
+    def _current_market_code(self) -> str:
+        selected_label = self.market_directory_market_var.get()
+        return next((code for code, label in MARKET_LABELS.items() if label == selected_label), "us")
+
+    def on_market_directory_market_changed(self, _event=None) -> None:
+        self.market_directory_search_var.set("")
+        self.market_directory_page = None
+        self.load_market_directory(0)
+
     def load_market_directory(self, page: int = 0, search_text: str = "") -> None:
         if self.market_directory_loading:
             return
         self.market_directory_loading = True
-        self.market_directory_status_var.set("正在读取全市场股票…")
+        market = self._current_market_code()
+        self.market_directory_status_var.set(f"正在读取{MARKET_LABELS[market]}全市场股票…")
+        self.market_directory_market_combo.configure(state="disabled")
         self.market_directory_previous_button.configure(state="disabled")
         self.market_directory_next_button.configure(state="disabled")
 
         def worker() -> None:
             try:
-                client = MarketDirectoryClient(page_size=100)
+                client = MarketDirectoryClient(page_size=100, market=market)
                 result = client.search(search_text) if search_text else client.fetch_page(page)
                 self.events.put(("market_directory_results", result, search_text))
             except Exception as exc:
@@ -974,6 +1027,10 @@ class SignalMonitorApp:
         self.load_market_directory(self._current_market_page() + 1)
 
     def _render_market_directory(self, result: MarketDirectoryPage, search_text: str) -> None:
+        self.market_directory_market_combo.configure(state="readonly")
+        if result.market != self._current_market_code():
+            self.load_market_directory(0, self.market_directory_search_var.get().strip())
+            return
         self.market_directory_page = result
         for item in self.market_directory_tree.get_children():
             self.market_directory_tree.delete(item)
@@ -990,9 +1047,9 @@ class SignalMonitorApp:
             if movement_tag:
                 self.market_directory_price_directions[entry.symbol] = movement_tag
             market_cap = (
-                f"${entry.market_cap / 1_000_000_000:.1f}B"
+                f"{self._currency_prefix(entry.currency)}{entry.market_cap / 1_000_000_000:.1f}B"
                 if entry.market_cap >= 1_000_000_000
-                else f"${entry.market_cap / 1_000_000:.1f}M" if entry.market_cap else "—"
+                else f"{self._currency_prefix(entry.currency)}{entry.market_cap / 1_000_000:.1f}M" if entry.market_cap else "—"
             )
             self.market_directory_tree.insert(
                 "", "end", iid=entry.symbol,
@@ -1000,24 +1057,33 @@ class SignalMonitorApp:
                     entry.symbol,
                     entry.name,
                     entry.exchange,
-                    f"${entry.price:,.2f}" if entry.price else "—",
+                    f"{self._currency_prefix(entry.currency)}{entry.price:,.2f}" if entry.price else "—",
                     f"{entry.change_pct:+.2f}%",
                     f"{entry.volume:,}" if entry.volume else "—",
                     market_cap,
                     "★ 已加入" if entry.symbol in self.symbols else "—",
                 ),
-                tags=(change_tag, movement_tag) if movement_tag else (change_tag,),
+                tags=(directional_row_tag(change_tag, movement_tag),),
             )
+        market_label = MARKET_LABELS[result.market]
         if search_text:
-            self.market_directory_status_var.set(f"搜索“{search_text}” · 返回 {len(result.entries)} 只 · 右键可加入自选")
+            self.market_directory_status_var.set(
+                f"{market_label}搜索“{search_text}” · 返回 {len(result.entries)} 只 · 右键可加入自选"
+            )
         else:
             first = result.page * result.page_size + 1 if result.entries else 0
             last = result.page * result.page_size + len(result.entries)
-            self.market_directory_status_var.set(f"全市场约 {result.total:,} 只 · 当前 {first:,}–{last:,} · 第 {result.page + 1} 页")
+            self.market_directory_status_var.set(
+                f"{market_label}全市场约 {result.total:,} 只 · 当前 {first:,}–{last:,} · 第 {result.page + 1} 页"
+            )
         self.market_directory_previous_button.configure(state="normal" if result.page > 0 and not search_text else "disabled")
         has_next = (result.page + 1) * result.page_size < result.total
         self.market_directory_next_button.configure(state="normal" if has_next and not search_text else "disabled")
         self._sync_selected_price_styles()
+
+    @staticmethod
+    def _currency_prefix(currency: str) -> str:
+        return "HK$" if currency.upper() == "HKD" else "$"
 
     def show_market_directory_menu(self, event) -> None:
         item = self.market_directory_tree.identify_row(event.y)
@@ -1111,7 +1177,7 @@ class SignalMonitorApp:
                     result.opportunity,
                     quote_time,
                 ),
-                tags=(result.tag, movement_tag) if movement_tag else (result.tag,),
+                tags=(directional_row_tag(result.tag, movement_tag),),
             )
         self._sync_selected_price_styles()
 
@@ -1229,11 +1295,13 @@ class SignalMonitorApp:
                    f"${cost:,.2f}" if quantity else "—", f"${price * quantity:,.2f}" if price and quantity else "—")
             if not self.watch_tree.exists(symbol):
                 self.watch_tree.insert("", "end", iid=symbol)
-            tags = (["held"] if quantity else [])
-            movement_tag = self.price_directions.get(symbol)
-            if movement_tag:
-                tags.append(movement_tag)
-            self.watch_tree.item(symbol, values=row, tags=tuple(tags))
+            base_tag = "HELD" if quantity else "WATCHLIST"
+            movement_tag = self.price_directions.get(symbol, "")
+            self.watch_tree.item(
+                symbol,
+                values=row,
+                tags=(directional_row_tag(base_tag, movement_tag),),
+            )
         held = sum(self.positions.get(symbol, {}).get("quantity", 0) > 0 for symbol in self.symbols)
         self.count_var.set(f"自选 {len(self.symbols)} 只 · 持仓 {held} 只")
 
@@ -1557,7 +1625,7 @@ class SignalMonitorApp:
     def add_symbol(self) -> None:
         symbol = self.symbol_entry.get().strip().upper()
         if not SYMBOL_PATTERN.fullmatch(symbol):
-            messagebox.showwarning("代码无效", "请输入有效的美股代码，例如 AAPL、SPY 或 BRK.B。")
+            messagebox.showwarning("代码无效", "请输入有效代码，例如 AAPL、BRK.B 或港股 0700.HK。")
             return
         if symbol in self.symbols:
             self.tree.selection_set(symbol)
@@ -1850,6 +1918,7 @@ class SignalMonitorApp:
                     self._render_market_directory(event[1], event[2])
                 elif kind == "market_directory_error":
                     self.market_directory_loading = False
+                    self.market_directory_market_combo.configure(state="readonly")
                     self.market_directory_status_var.set(f"全市场股票读取失败：{event[1]}")
                     self.market_directory_previous_button.configure(state="normal" if self._current_market_page() > 0 else "disabled")
                     self.market_directory_next_button.configure(state="normal")
@@ -2001,13 +2070,12 @@ class SignalMonitorApp:
             updated,
         )
         if self.tree.exists(symbol):
-            tags = (status_tag, movement_tag) if movement_tag else (status_tag,)
-            self.tree.item(symbol, values=row, tags=tags)
+            self.tree.item(
+                symbol,
+                values=row,
+                tags=(directional_row_tag(status_tag, movement_tag),),
+            )
         self._refresh_watchlist()
-        if movement_tag:
-            if self.watch_tree.exists(symbol):
-                base_tags = tuple(self.watch_tree.item(symbol, "tags"))
-                self.watch_tree.item(symbol, tags=base_tags + (movement_tag,))
         self._sync_selected_price_styles()
 
     def _sync_selected_price_styles(self, _event=None) -> None:

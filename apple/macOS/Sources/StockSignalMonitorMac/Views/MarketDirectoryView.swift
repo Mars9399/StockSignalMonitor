@@ -19,6 +19,21 @@ struct MarketDirectoryView: View {
 
                 Spacer()
 
+                Picker(
+                    "市场",
+                    selection: Binding(
+                        get: { store.marketRegion },
+                        set: { store.selectMarketRegion($0) }
+                    )
+                ) {
+                    ForEach(MarketRegion.allCases, id: \.self) { market in
+                        Text(market.displayName).tag(market)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 130)
+                .disabled(store.isLoadingMarketDirectory)
+
                 TextField("股票代码或名称", text: $store.marketSearchText)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 210)
@@ -66,7 +81,7 @@ struct MarketDirectoryView: View {
                 }
                     .width(130)
                 TableColumn("现价") { entry in
-                    Text(entry.price > 0 ? entry.price.formatted(SignalFormatting.currency) : "—")
+                    Text(price(entry))
                         .monospacedDigit()
                         .foregroundStyle(priceColor(for: entry))
                 }
@@ -85,7 +100,7 @@ struct MarketDirectoryView: View {
                 }
                 .width(110)
                 TableColumn("市值") { entry in
-                    Text(marketCap(entry.marketCap)).monospacedDigit()
+                    Text(marketCap(entry.marketCap, currency: entry.currency)).monospacedDigit()
                         .priceMovementBackground(store.priceMovements[entry.symbol])
                 }
                     .width(110)
@@ -127,9 +142,15 @@ struct MarketDirectoryView: View {
         }
     }
 
-    private func marketCap(_ value: Double) -> String {
-        if value >= 1_000_000_000 { return String(format: "$%.1fB", value / 1_000_000_000) }
-        if value >= 1_000_000 { return String(format: "$%.1fM", value / 1_000_000) }
+    private func price(_ entry: MarketDirectoryEntry) -> String {
+        guard entry.price > 0 else { return "—" }
+        return entry.price.formatted(.currency(code: entry.currency))
+    }
+
+    private func marketCap(_ value: Double, currency: String) -> String {
+        let prefix = currency == "HKD" ? "HK$" : "$"
+        if value >= 1_000_000_000 { return String(format: "%@%.1fB", prefix, value / 1_000_000_000) }
+        if value >= 1_000_000 { return String(format: "%@%.1fM", prefix, value / 1_000_000) }
         return "—"
     }
 }

@@ -47,6 +47,8 @@ class WindowsUITests(unittest.TestCase):
                     self.assertEqual(str(app.mover_refresh_button.cget("text")), "立即刷新")
                     self.assertIn("全市场股票", app.notebook.tab(app.market_directory_card, "text"))
                     self.assertTrue(app.market_directory_tree.bind("<Button-3>"))
+                    self.assertIn("港股", app.market_directory_market_combo.cget("values"))
+                    self.assertTrue(gui.SYMBOL_PATTERN.fullmatch("0700.HK"))
                     self.assertTrue(app.tree.bind("<Double-1>"))
                     self.assertIn("buy_probability", app.tree.cget("columns"))
                     self.assertIn("reduce_probability", app.tree.cget("columns"))
@@ -75,21 +77,32 @@ class WindowsUITests(unittest.TestCase):
                     score_row = app.tree.item("MSFT", "values")
                     self.assertIn("%", score_row[8])
                     self.assertIn("%", score_row[9])
-                    app.tree.selection_set("MSFT")
                     app.levels["MSFT"]["price"] = 100.0
                     with patch.object(gui, "observation_reason", return_value=None):
                         app._render_row("MSFT", 100.0, datetime.now(timezone.utc))
-                    self.assertIn("PRICE_UP", app.tree.item("MSFT", "tags"))
-                    self.assertIn("PRICE_UP", app.watch_tree.item("MSFT", "tags"))
+                    overview_up_tag = app.tree.item("MSFT", "tags")[0]
+                    watch_up_tag = app.watch_tree.item("MSFT", "tags")[0]
+                    self.assertTrue(overview_up_tag.endswith("_PRICE_UP"))
+                    self.assertTrue(watch_up_tag.endswith("_PRICE_UP"))
+                    self.assertEqual(
+                        str(app.tree.tag_configure(overview_up_tag, "foreground")),
+                        gui.PRICE_UP_COLOR,
+                    )
+                    self.assertEqual(
+                        str(app.watch_tree.tag_configure(watch_up_tag, "foreground")),
+                        gui.PRICE_UP_COLOR,
+                    )
+                    app.tree.selection_set("MSFT")
+                    app._sync_selected_price_styles()
                     self.assertEqual(style.lookup("Overview.Treeview", "foreground", ("selected",)), "#38d982")
                     app.levels["MSFT"]["price"] = 98.0
                     with patch.object(gui, "observation_reason", return_value=None):
                         app._render_row("MSFT", 98.0, datetime.now(timezone.utc))
-                    self.assertIn("PRICE_DOWN", app.tree.item("MSFT", "tags"))
+                    self.assertTrue(app.tree.item("MSFT", "tags")[0].endswith("_PRICE_DOWN"))
                     self.assertEqual(style.lookup("Overview.Treeview", "foreground", ("selected",)), "#ff6678")
                     with patch.object(gui, "observation_reason", return_value=None):
                         app._render_row("MSFT", 98.0, datetime.now(timezone.utc))
-                    self.assertIn("PRICE_DOWN", app.tree.item("MSFT", "tags"))
+                    self.assertTrue(app.tree.item("MSFT", "tags")[0].endswith("_PRICE_DOWN"))
                     self.assertFalse(hasattr(app, "price_flash_jobs"))
                     app.running = False
                     app._apply_tws_positions([dict(symbol="AAPL", quantity=0.5, avg_cost=100,
@@ -121,6 +134,11 @@ class WindowsUITests(unittest.TestCase):
                         opportunity="买入机会：突破 +1.0%", tag="BUY", quote_time=datetime.now(timezone.utc),
                     )
                     app._render_movers(app.gainers_tree, [changed_result])
-                    self.assertIn("PRICE_UP", app.gainers_tree.item("gainers:NVDA", "tags"))
+                    mover_tag = app.gainers_tree.item("gainers:NVDA", "tags")[0]
+                    self.assertTrue(mover_tag.endswith("_PRICE_UP"))
+                    self.assertEqual(
+                        str(app.gainers_tree.tag_configure(mover_tag, "foreground")),
+                        gui.PRICE_UP_COLOR,
+                    )
             finally:
                 root.destroy()

@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(2, 5, 1, 0),
-    prodvers=(2, 5, 1, 0),
+    filevers=(2, 5, 2, 0),
+    prodvers=(2, 5, 2, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'Design by Mars'),
           StringStruct('FileDescription', '美股买卖点与仓位监控'),
-          StringStruct('FileVersion', '2.5.1.0'),
+          StringStruct('FileVersion', '2.5.2.0'),
           StringStruct('InternalName', 'StockSignalMonitor'),
           StringStruct('LegalCopyright', 'Design by Mars'),
           StringStruct('OriginalFilename', 'StockSignalMonitor.exe'),
           StringStruct('ProductName', 'Stock Signal Monitor · Design by Mars'),
-          StringStruct('ProductVersion', '2.5.1.0')
+          StringStruct('ProductVersion', '2.5.2.0')
         ]
       )
     ]),

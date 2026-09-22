@@ -19,6 +19,7 @@ final class MacMonitorStore {
     var activityLog: [String] = []
     var priceMovements: [String: PriceMovement] = [:]
     var marketEntries: [MarketDirectoryEntry] = []
+    var marketRegion: MarketRegion = .us
     var marketPage = 0
     var marketTotal = 0
     var marketSearchText = ""
@@ -140,7 +141,7 @@ final class MacMonitorStore {
 
     func addSymbol(_ rawSymbol: String) {
         let symbol = rawSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard symbol.range(of: #"^[A-Z][A-Z0-9.\-]{0,9}$"#, options: .regularExpression) != nil,
+        guard symbol.range(of: #"^[A-Z0-9][A-Z0-9.\-]{0,11}$"#, options: .regularExpression) != nil,
               !watchlist.contains(symbol) else { return }
         watchlist.append(symbol)
         watchlist.sort()
@@ -219,15 +220,19 @@ final class MacMonitorStore {
         guard !isLoadingMarketDirectory else { return }
         let requestedPage = max(0, page ?? marketPage)
         let query = marketSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedMarket = marketRegion
         isLoadingMarketDirectory = true
-        marketDirectoryMessage = query.isEmpty ? "正在读取全市场股票…" : "正在搜索 \(query)…"
+        marketDirectoryMessage = query.isEmpty
+            ? "正在读取\(requestedMarket.displayName)全市场股票…"
+            : "正在搜索\(requestedMarket.displayName) \(query)…"
         Task { [weak self] in
             guard let self else { return }
             defer { isLoadingMarketDirectory = false }
             do {
                 let result = query.isEmpty
-                    ? try await marketDirectoryService.page(requestedPage)
-                    : try await marketDirectoryService.search(query)
+                    ? try await marketDirectoryService.page(requestedPage, market: requestedMarket)
+                    : try await marketDirectoryService.search(query, market: requestedMarket)
+                guard result.market == marketRegion else { return }
                 for entry in result.entries where entry.price > 0 {
                     registerPriceMovement(symbol: entry.symbol, price: entry.price)
                 }
@@ -235,12 +240,22 @@ final class MacMonitorStore {
                 marketPage = result.page
                 marketTotal = result.total
                 marketDirectoryMessage = query.isEmpty
-                    ? "全市场约 \(result.total) 只 · 第 \(result.page + 1) 页"
-                    : "搜索“\(query)” · 返回 \(result.entries.count) 只"
+                    ? "\(result.market.displayName)全市场约 \(result.total) 只 · 第 \(result.page + 1) 页"
+                    : "\(result.market.displayName)搜索“\(query)” · 返回 \(result.entries.count) 只"
             } catch {
                 marketDirectoryMessage = "全市场股票读取失败：\(error.localizedDescription)"
             }
         }
+    }
+
+    func selectMarketRegion(_ region: MarketRegion) {
+        guard marketRegion != region, !isLoadingMarketDirectory else { return }
+        marketRegion = region
+        marketSearchText = ""
+        marketEntries = []
+        marketPage = 0
+        marketTotal = 0
+        loadMarketDirectory(page: 0)
     }
 
     func clearMarketSearchAndLoad(page: Int) {
