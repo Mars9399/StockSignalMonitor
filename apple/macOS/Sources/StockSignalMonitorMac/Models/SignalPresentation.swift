@@ -37,7 +37,7 @@ enum PresentationSignalStatus: String, Codable, CaseIterable, Sendable {
     }
 }
 
-enum PriceMovement: Sendable {
+enum PriceMovement: Equatable, Sendable {
     case up
     case down
 }

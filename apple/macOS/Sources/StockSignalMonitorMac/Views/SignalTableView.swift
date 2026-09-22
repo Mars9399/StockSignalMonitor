@@ -334,19 +334,12 @@ struct WatchlistView: View {
 struct PriceMovementBackground: ViewModifier {
     let movement: PriceMovement?
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .frame(maxWidth: .infinity, minHeight: 24, alignment: .center)
-            .padding(.horizontal, 3)
-            .background(backgroundColor, in: RoundedRectangle(cornerRadius: 4))
-            .animation(.easeOut(duration: 0.16), value: movement != nil)
-    }
-
-    private var backgroundColor: Color {
-        switch movement {
-        case .up: return .green.opacity(0.28)
-        case .down: return .red.opacity(0.28)
-        case .none: return .clear
+        if let movement {
+            content.foregroundStyle(movement == .up ? Color.green : Color.red)
+        } else {
+            content
         }
     }
 }

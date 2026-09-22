@@ -34,7 +34,6 @@ final class MacMonitorStore {
     private var monitoringTask: Task<Void, Never>?
     private var monitoringGeneration = UUID()
     private var lastPresentedPrices: [String: Double] = [:]
-    private var priceFlashTasks: [String: Task<Void, Never>] = [:]
     private let defaults: UserDefaults
 
     init(
@@ -265,13 +264,6 @@ final class MacMonitorStore {
         defer { lastPresentedPrices[symbol] = price }
         guard let previous = lastPresentedPrices[symbol], previous != price else { return }
         priceMovements[symbol] = price > previous ? .up : .down
-        priceFlashTasks[symbol]?.cancel()
-        priceFlashTasks[symbol] = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(1_500))
-            guard !Task.isCancelled else { return }
-            self?.priceMovements.removeValue(forKey: symbol)
-            self?.priceFlashTasks.removeValue(forKey: symbol)
-        }
     }
 
     private func persistWatchlist() {

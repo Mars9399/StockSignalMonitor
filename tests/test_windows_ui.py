@@ -80,14 +80,16 @@ class WindowsUITests(unittest.TestCase):
                         app._render_row("MSFT", 100.0, datetime.now(timezone.utc))
                     self.assertIn("PRICE_UP", app.tree.item("MSFT", "tags"))
                     self.assertIn("PRICE_UP", app.watch_tree.item("MSFT", "tags"))
-                    self.assertEqual(style.lookup("Overview.Treeview", "background", ("selected",)), "#16784a")
+                    self.assertEqual(style.lookup("Overview.Treeview", "foreground", ("selected",)), "#38d982")
                     app.levels["MSFT"]["price"] = 98.0
                     with patch.object(gui, "observation_reason", return_value=None):
                         app._render_row("MSFT", 98.0, datetime.now(timezone.utc))
                     self.assertIn("PRICE_DOWN", app.tree.item("MSFT", "tags"))
-                    app._clear_price_flash("MSFT")
-                    self.assertNotIn("PRICE_DOWN", app.tree.item("MSFT", "tags"))
-                    self.assertEqual(style.lookup("Overview.Treeview", "background", ("selected",)), "#4b72a8")
+                    self.assertEqual(style.lookup("Overview.Treeview", "foreground", ("selected",)), "#ff6678")
+                    with patch.object(gui, "observation_reason", return_value=None):
+                        app._render_row("MSFT", 98.0, datetime.now(timezone.utc))
+                    self.assertIn("PRICE_DOWN", app.tree.item("MSFT", "tags"))
+                    self.assertFalse(hasattr(app, "price_flash_jobs"))
                     app.running = False
                     app._apply_tws_positions([dict(symbol="AAPL", quantity=0.5, avg_cost=100,
                                                    account="test", security_type="STK", currency="USD")], "")

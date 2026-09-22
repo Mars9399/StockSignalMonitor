@@ -68,8 +68,7 @@ struct MarketDirectoryView: View {
                 TableColumn("现价") { entry in
                     Text(entry.price > 0 ? entry.price.formatted(SignalFormatting.currency) : "—")
                         .monospacedDigit()
-                        .foregroundStyle(color(for: entry))
-                        .priceMovementBackground(store.priceMovements[entry.symbol])
+                        .foregroundStyle(priceColor(for: entry))
                 }
                 .width(100)
                 TableColumn("涨跌") { entry in
@@ -118,6 +117,14 @@ struct MarketDirectoryView: View {
         if entry.changePercent > 0 { return .green }
         if entry.changePercent < 0 { return .red }
         return .secondary
+    }
+
+    private func priceColor(for entry: MarketDirectoryEntry) -> Color {
+        switch store.priceMovements[entry.symbol] {
+        case .up: return .green
+        case .down: return .red
+        case .none: return color(for: entry)
+        }
     }
 
     private func marketCap(_ value: Double) -> String {
