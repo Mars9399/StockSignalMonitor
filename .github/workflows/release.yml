@@ -1,6 +1,10 @@
 name: Release applications
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/release-version
   workflow_dispatch:
     inputs:
       version:
@@ -17,6 +21,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve release version
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          if (-not $version) { $version = (Get-Content .github/release-version).Trim() }
+          "VERSION=$version" >> $env:GITHUB_ENV
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -26,7 +36,7 @@ jobs:
         run: |
           $match = Select-String -Path signal_monitor_gui.py -Pattern '^APP_VERSION = "([^"]+)"$'
           $sourceVersion = $match.Matches.Groups[1].Value
-          if ("${{ inputs.version }}" -ne $sourceVersion) {
+          if ($env:VERSION -ne $sourceVersion) {
             throw "Requested version does not match the source version $sourceVersion."
           }
       - name: Install dependencies
@@ -37,11 +47,11 @@ jobs:
         run: ./build.ps1
       - name: Package Windows application
         shell: pwsh
-        run: Compress-Archive -Path build-output/StockSignalMonitor -DestinationPath StockSignalMonitor-${{ inputs.version }}-Windows.zip
+        run: Compress-Archive -Path build-output/StockSignalMonitor -DestinationPath "StockSignalMonitor-$env:VERSION-Windows.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows
-          path: StockSignalMonitor-${{ inputs.version }}-Windows.zip
+          path: StockSignalMonitor-*-Windows.zip
           if-no-files-found: error
 
   build-macos:
@@ -49,12 +59,17 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve release version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then VERSION="$(tr -d '[:space:]' < .github/release-version)"; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Validate requested version
         run: |
           SOURCE_VERSION="$(awk '/MARKETING_VERSION:/ {print $2; exit}' apple/project.yml)"
-          test "${{ inputs.version }}" = "$SOURCE_VERSION"
+          test "$VERSION" = "$SOURCE_VERSION"
       - name: Generate Xcode project
         run: ./apple/scripts/bootstrap.sh
       - name: Run Swift tests
@@ -77,19 +92,19 @@ jobs:
           codesign --force --deep --options runtime \
             --entitlements apple/macOS/Resources/StockSignalMonitorMac.entitlements \
             --sign - "$APP"
-          ditto -c -k --sequesterRsrc --keepParent "$APP" "StockSignalMonitor-${{ inputs.version }}-macOS-universal.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "StockSignalMonitor-$VERSION-macOS-universal.zip"
       - name: Validate macOS package
         run: |
           APP="apple/.releaseDerivedData/Build/Products/Release/StockSignalMonitorMac.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
           codesign -d --entitlements :- "$APP" 2>&1 | grep -q "com.apple.security.network.client"
-          test "$(defaults read "$APP/Contents/Info" CFBundleShortVersionString)" = "${{ inputs.version }}"
+          test "$(defaults read "$APP/Contents/Info" CFBundleShortVersionString)" = "$VERSION"
           file "$APP/Contents/MacOS/StockSignalMonitorMac" | grep -q "x86_64"
           file "$APP/Contents/MacOS/StockSignalMonitorMac" | grep -q "arm64"
       - uses: actions/upload-artifact@v4
         with:
           name: release-macos
-          path: StockSignalMonitor-${{ inputs.version }}-macOS-universal.zip
+          path: StockSignalMonitor-*-macOS-universal.zip
           if-no-files-found: error
 
   publish:
@@ -97,6 +112,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve release version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then VERSION="$(tr -d '[:space:]' < .github/release-version)"; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -105,7 +125,6 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
         run: |
           gh release create "v$VERSION" release-assets/*.zip \
             --target "$GITHUB_SHA" \
