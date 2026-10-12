@@ -18,6 +18,7 @@ data_provider.txt
 .DS_Store
 apple/.build/
 apple/.derivedData/
+apple/.releaseDerivedData/
 apple/StockSignalMonitorApple.xcodeproj/
 apple/*.xcworkspace/
 xcuserdata/

@@ -1,0 +1,114 @@
+name: Release applications
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish, without the v prefix
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Validate requested version
+        shell: pwsh
+        run: |
+          $match = Select-String -Path signal_monitor_gui.py -Pattern '^APP_VERSION = "([^"]+)"$'
+          $sourceVersion = $match.Matches.Groups[1].Value
+          if ("${{ inputs.version }}" -ne $sourceVersion) {
+            throw "Requested version does not match the source version $sourceVersion."
+          }
+      - name: Install dependencies
+        run: ./setup.ps1
+      - name: Run Windows tests
+        run: ./.venv/Scripts/python.exe -m unittest discover -s tests -v
+      - name: Build Windows application
+        run: ./build.ps1
+      - name: Package Windows application
+        shell: pwsh
+        run: Compress-Archive -Path build-output/StockSignalMonitor -DestinationPath StockSignalMonitor-${{ inputs.version }}-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: StockSignalMonitor-${{ inputs.version }}-Windows.zip
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Validate requested version
+        run: |
+          SOURCE_VERSION="$(awk '/MARKETING_VERSION:/ {print $2; exit}' apple/project.yml)"
+          test "${{ inputs.version }}" = "$SOURCE_VERSION"
+      - name: Generate Xcode project
+        run: ./apple/scripts/bootstrap.sh
+      - name: Run Swift tests
+        run: swift test --package-path apple
+      - name: Build universal macOS application
+        run: |
+          xcodebuild \
+            -project apple/StockSignalMonitorApple.xcodeproj \
+            -scheme StockSignalMonitorMac \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath apple/.releaseDerivedData \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Apply ad-hoc signature and package
+        run: |
+          APP="apple/.releaseDerivedData/Build/Products/Release/StockSignalMonitorMac.app"
+          codesign --force --deep --options runtime \
+            --entitlements apple/macOS/Resources/StockSignalMonitorMac.entitlements \
+            --sign - "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "StockSignalMonitor-${{ inputs.version }}-macOS-universal.zip"
+      - name: Validate macOS package
+        run: |
+          APP="apple/.releaseDerivedData/Build/Products/Release/StockSignalMonitorMac.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -d --entitlements :- "$APP" 2>&1 | grep -q "com.apple.security.network.client"
+          test "$(defaults read "$APP/Contents/Info" CFBundleShortVersionString)" = "${{ inputs.version }}"
+          file "$APP/Contents/MacOS/StockSignalMonitorMac" | grep -q "x86_64"
+          file "$APP/Contents/MacOS/StockSignalMonitorMac" | grep -q "arm64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: StockSignalMonitor-${{ inputs.version }}-macOS-universal.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "v$VERSION" release-assets/*.zip \
+            --target "$GITHUB_SHA" \
+            --title "Stock Signal Monitor v$VERSION" \
+            --generate-notes \
+            --notes "Windows 与 macOS 同步发布。macOS 包为通用架构并采用临时签名，尚未经过 Apple Developer ID 公证；首次打开时可能需要在系统设置的隐私与安全性页面确认。"

@@ -29,7 +29,7 @@ from tws_positions import fetch_positions, merge_positions
 from reliability import observation_reason, initialize_risk_baseline, NEW_YORK
 
 
-APP_VERSION = "2.5.2"
+APP_VERSION = "2.5.3"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 BASE_DIR = (

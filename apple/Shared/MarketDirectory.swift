@@ -126,7 +126,7 @@ public actor YahooMarketDirectoryService {
         var request = URLRequest(url: components.url!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.3", forHTTPHeaderField: "User-Agent")
         let query: [String: Any] = [
             "operator": "AND",
             "operands": [
@@ -171,7 +171,7 @@ public actor YahooMarketDirectoryService {
             .init(name: "region", value: market.yahooLocale)
         ]
         var request = URLRequest(url: components.url!)
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.3", forHTTPHeaderField: "User-Agent")
         let data = try await responseData(for: request)
         let response = try JSONDecoder().decode(SearchEnvelope.self, from: data)
         let entries = response.quotes
@@ -192,11 +192,11 @@ public actor YahooMarketDirectoryService {
         // cookie. The bootstrap response itself may be an error page; its
         // Set-Cookie header is the useful part and URLSession stores it.
         var bootstrap = URLRequest(url: URL(string: "https://fc.yahoo.com")!)
-        bootstrap.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
+        bootstrap.setValue("Mozilla/5.0 StockSignalMonitor/2.5.3", forHTTPHeaderField: "User-Agent")
         _ = try await session.data(for: bootstrap)
 
         var request = URLRequest(url: URL(string: "https://query1.finance.yahoo.com/v1/test/getcrumb")!)
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.3", forHTTPHeaderField: "User-Agent")
         let data = try await responseData(for: request)
         guard let crumb = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !crumb.isEmpty else { throw MarketDataError.invalidResponse }
@@ -277,7 +277,7 @@ public actor YahooMarketMoverService {
             .init(name: "formatted", value: "false")
         ]
         var request = URLRequest(url: components.url!)
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.3", forHTTPHeaderField: "User-Agent")
         let data = try await responseData(for: request)
         guard let result = try JSONDecoder().decode(ScreenEnvelope.self, from: data).finance.result.first else {
             throw MarketDataError.invalidResponse
@@ -307,7 +307,7 @@ public actor YahooMarketMoverService {
         var request = URLRequest(url: components.url!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.3", forHTTPHeaderField: "User-Agent")
 
         // Match Yahoo/yfinance's standard day_gainers/day_losers liquidity
         // filters, adding only the provider-native sector operand.
@@ -349,11 +349,11 @@ public actor YahooMarketMoverService {
 
     private func yahooCrumb() async throws -> String {
         var bootstrap = URLRequest(url: URL(string: "https://fc.yahoo.com")!)
-        bootstrap.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
+        bootstrap.setValue("Mozilla/5.0 StockSignalMonitor/2.5.3", forHTTPHeaderField: "User-Agent")
         _ = try await session.data(for: bootstrap)
 
         var request = URLRequest(url: URL(string: "https://query1.finance.yahoo.com/v1/test/getcrumb")!)
-        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.2", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 StockSignalMonitor/2.5.3", forHTTPHeaderField: "User-Agent")
         let data = try await responseData(for: request)
         guard let crumb = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !crumb.isEmpty else { throw MarketDataError.invalidResponse }
