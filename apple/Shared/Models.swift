@@ -123,12 +123,23 @@ public struct Position: Codable, Hashable, Sendable {
     public var averageCost: Double
     public var quantity: Double
     public var initialStop: Double?
+    public var riskReferencePrice: Double?
 
-    public init(symbol: String, averageCost: Double = 0, quantity: Double = 0, initialStop: Double? = nil) {
+    public init(symbol: String, averageCost: Double = 0, quantity: Double = 0, initialStop: Double? = nil, riskReferencePrice: Double? = nil) {
         self.symbol = symbol.uppercased()
         self.averageCost = max(0, averageCost)
         self.quantity = max(0, quantity)
         self.initialStop = initialStop
+        self.riskReferencePrice = riskReferencePrice
+    }
+
+    /// A current-time monitoring baseline, not a reconstruction of entry risk.
+    public mutating func initializeRiskBaseline(price: Double, atr: Double, eligible: Bool) -> Bool {
+        guard eligible, initialStop == nil, quantity > 0, averageCost > 0,
+              price.isFinite, atr.isFinite, atr > 0, price - 2 * atr > 0 else { return false }
+        initialStop = price - 2 * atr
+        riskReferencePrice = price
+        return true
     }
 }
 

@@ -15,6 +15,10 @@ final class MacMonitorStore {
     var isAddingSymbol = false
     var isSyncingTWSPositions = false
     var twsPositionMessage = "尚未同步"
+    var twsAccountSummary: TWSAccountSummary?
+    var twsAccountSummaryMessage = "尚未读取账户情况"
+    var isLoadingTWSAccountSummary = false
+    var isTWSAccountSummaryHidden = false
     var lastError: String?
     var activityLog: [String] = []
     var priceMovements: [String: PriceMovement] = [:]
@@ -25,6 +29,12 @@ final class MacMonitorStore {
     var marketSearchText = ""
     var marketDirectoryMessage = "分页浏览 Yahoo 美股市场；右键可加入自选"
     var isLoadingMarketDirectory = false
+    var marketGainers: [MarketMoverEntry] = []
+    var marketLosers: [MarketMoverEntry] = []
+    var marketMoverSector: MarketSector = .all
+    var marketMoversMessage = "Yahoo 美股当日涨跌榜；结合 10 日价格通道辅助判断"
+    var isLoadingMarketMovers = false
+    var marketMoversUpdatedAt: Date?
 
     let preferences: AppPreferences
     let credentials: ProviderCredentials
@@ -32,6 +42,7 @@ final class MacMonitorStore {
     private let backend: any MonitoringBackend
     private let twsPositionClient = TWSPositionClient()
     private let marketDirectoryService = YahooMarketDirectoryService()
+    private let marketMoverService = YahooMarketMoverService()
     private var monitoringTask: Task<Void, Never>?
     private var monitoringGeneration = UUID()
     private var lastPresentedPrices: [String: Double] = [:]
@@ -108,6 +119,16 @@ final class MacMonitorStore {
                 for await update in stream {
                     guard !Task.isCancelled else { break }
                     applySignals(update.signals)
+                    var baselineChanged = false
+                    for (symbol, candidate) in update.positions {
+                        if let current = positions[symbol], current.initialStop == nil,
+                           candidate.initialStop != nil, current.quantity == candidate.quantity,
+                           current.averageCost == candidate.averageCost {
+                            positions[symbol] = candidate
+                            baselineChanged = true
+                        }
+                    }
+                    if baselineChanged { persistPositions() }
                     if let message = update.message {
                         connectionMessage = message
                         log(message)
@@ -117,7 +138,7 @@ final class MacMonitorStore {
                 // User-requested stop.
             } catch {
                 lastError = error.localizedDescription
-                connectionMessage = "连接失败"
+                connectionMessage = "连接失败：\(error.localizedDescription)"
                 log("连接错误：\(error.localizedDescription)")
             }
             if monitoringGeneration == generation { isMonitoring = false }
@@ -171,7 +192,7 @@ final class MacMonitorStore {
     }
 
     func syncPositionsFromTWS() {
-        guard !isSyncingTWSPositions else { return }
+        guard !isSyncingTWSPositions, !isLoadingTWSAccountSummary else { return }
         let resumeMonitoring = isMonitoring
         if resumeMonitoring { stopMonitoring() }
         lastError = nil
@@ -187,8 +208,29 @@ final class MacMonitorStore {
                 try await importTWSPositions()
             } catch {
                 lastError = error.localizedDescription
-                twsPositionMessage = "同步失败"
-                log("TWS 持仓同步失败：\(error.localizedDescription)")
+                twsPositionMessage = "同步失败 · \(preferences.twsHost):\(preferences.twsPort)"
+                connectionMessage = "TWS 连接失败：\(error.localizedDescription)"
+                log("TWS 持仓同步失败（\(preferences.twsHost):\(preferences.twsPort)）：\(error.localizedDescription)")
+            }
+        }
+    }
+
+    func refreshTWSAccountSummary() {
+        guard preferences.provider == .ibkr,
+              !isLoadingTWSAccountSummary,
+              !isSyncingTWSPositions else { return }
+        lastError = nil
+        isLoadingTWSAccountSummary = true
+        twsAccountSummaryMessage = "正在读取账户情况…"
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isLoadingTWSAccountSummary = false }
+            do {
+                let result = try await readTWSAccountSummary()
+                applyTWSAccountSummary(result.summary, includesLivePnL: result.includesLivePnL)
+            } catch {
+                twsAccountSummaryMessage = "账户情况读取失败：\(error.localizedDescription)"
+                log("TWS 账户情况读取失败：\(error.localizedDescription)")
             }
         }
     }
@@ -267,6 +309,42 @@ final class MacMonitorStore {
         addSymbol(symbol)
     }
 
+    func loadMarketMovers() {
+        guard !isLoadingMarketMovers else { return }
+        let requestedSector = marketMoverSector
+        isLoadingMarketMovers = true
+        marketMoversMessage = "正在读取\(requestedSector.displayName)涨跌 Top 20 并分析价格通道…"
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isLoadingMarketMovers = false }
+            do {
+                let snapshot = try await marketMoverService.snapshot(
+                    sector: requestedSector,
+                    limit: YahooMarketMoverService.defaultLimit
+                )
+                guard requestedSector == marketMoverSector else { return }
+                for entry in snapshot.gainers + snapshot.losers where entry.price > 0 {
+                    registerPriceMovement(symbol: entry.symbol, price: entry.price)
+                }
+                marketGainers = snapshot.gainers
+                marketLosers = snapshot.losers
+                marketMoversUpdatedAt = snapshot.updatedAt
+                marketMoversMessage = "\(requestedSector.displayName) · 已更新 \(snapshot.gainers.count) 只涨幅榜、\(snapshot.losers.count) 只跌幅榜"
+            } catch {
+                marketMoversMessage = "\(requestedSector.displayName) Top 20 读取失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    func selectMarketMoverSector(_ sector: MarketSector) {
+        guard sector != marketMoverSector, !isLoadingMarketMovers else { return }
+        marketMoverSector = sector
+        marketGainers = []
+        marketLosers = []
+        marketMoversUpdatedAt = nil
+        loadMarketMovers()
+    }
+
     private func applySignals(_ newSignals: [SignalPresentation]) {
         for signal in newSignals {
             guard let price = signal.currentPrice else { continue }
@@ -343,6 +421,9 @@ final class MacMonitorStore {
                 quantity: total.quantity,
                 initialStop: oldPositions[symbol].flatMap {
                     abs($0.averageCost - total.weightedCost / total.quantity) < 0.000001 && $0.quantity == total.quantity ? $0.initialStop : nil
+                },
+                riskReferencePrice: oldPositions[symbol].flatMap {
+                    abs($0.averageCost - total.weightedCost / total.quantity) < 0.000001 && $0.quantity == total.quantity ? $0.riskReferencePrice : nil
                 }
             )
             if !watchlist.contains(symbol) {
@@ -358,11 +439,51 @@ final class MacMonitorStore {
         persistWatchlist()
         persistPositions()
 
+        do {
+            let result = try await readTWSAccountSummary()
+            applyTWSAccountSummary(result.summary, includesLivePnL: result.includesLivePnL)
+        } catch {
+            twsAccountSummaryMessage = "账户情况读取失败：\(error.localizedDescription)"
+            log("持仓已同步，但 TWS 账户情况读取失败：\(error.localizedDescription)")
+        }
+
         let accountText = requestedAccount.isEmpty ? "全部可用账户" : requestedAccount
         twsPositionMessage = "已同步 \(importedSymbols.count) 只持仓 · \(accountText)"
         if skipped > 0 { twsPositionMessage += " · 跳过 \(skipped) 项不支持的持仓" }
         connectionMessage = twsPositionMessage
         log(twsPositionMessage)
+    }
+
+    private func readTWSAccountSummary() async throws -> (summary: TWSAccountSummary, includesLivePnL: Bool) {
+        guard (1...65_535).contains(preferences.twsPort),
+              (0...Int(Int32.max)).contains(preferences.twsClientID) else {
+            throw TWSImportError.invalidConfiguration
+        }
+        let summary = try await twsPositionClient.fetchAccountSummary(
+            host: preferences.twsHost,
+            port: UInt16(preferences.twsPort),
+            clientID: TWSPositionClient.auxiliaryClientID(base: preferences.twsClientID),
+            accountID: preferences.twsAccountID
+        )
+        do {
+            let pnl = try await twsPositionClient.fetchPnL(
+                host: preferences.twsHost,
+                port: UInt16(preferences.twsPort),
+                clientID: TWSPositionClient.auxiliaryClientID(base: preferences.twsClientID, offset: 102),
+                accountID: summary.account
+            )
+            return (summary.merging(pnl: pnl), true)
+        } catch {
+            log("TWS 资金数据已读取，但实时盈亏暂不可用：\(error.localizedDescription)")
+            return (summary, false)
+        }
+    }
+
+    private func applyTWSAccountSummary(_ summary: TWSAccountSummary, includesLivePnL: Bool) {
+        twsAccountSummary = summary
+        let pnlStatus = includesLivePnL ? "实时盈亏已同步" : "盈亏暂不可用"
+        twsAccountSummaryMessage = "账户 \(summary.account) · \(pnlStatus) · 已更新 \(Date.now.formatted(date: .omitted, time: .standard))"
+        log("已读取 TWS 账户 \(summary.account) 情况 · \(pnlStatus)")
     }
 
     private func log(_ message: String) {

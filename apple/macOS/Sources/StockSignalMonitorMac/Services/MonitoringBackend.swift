@@ -3,6 +3,7 @@ import Foundation
 struct MonitorUpdate: Sendable {
     var signals: [SignalPresentation]
     var message: String?
+    var positions: [String: PositionInput] = [:]
 }
 
 @MainActor

@@ -9,11 +9,19 @@ struct PositionEditorView: View {
     @State private var averageCost: Double
     @State private var quantity: Double
     @State private var initialStop: Double?
+    @State private var originalPosition: Position?
     @FocusState private var focusedField: Field?
 
     private enum Field {
         case averageCost
         case quantity
+    }
+
+    private var referencePrice: Double {
+        if let originalPosition, averageCost == originalPosition.averageCost, quantity == originalPosition.quantity {
+            return originalPosition.riskReferencePrice ?? averageCost
+        }
+        return averageCost
     }
 
     init(symbol: String) {
@@ -26,7 +34,7 @@ struct PositionEditorView: View {
         NavigationStack {
             Form {
                 Section("当前持仓") {
-                    TextField("可选保护线（低于成本）", value: $initialStop, format: .number)
+                    TextField("保护线（留空自动按 2×ATR 建立）", value: $initialStop, format: .number)
                         .keyboardType(.decimalPad)
                     TextField("平均成本（美元）", value: $averageCost, format: .number.precision(.fractionLength(0...4)))
                         .keyboardType(.decimalPad)
@@ -37,7 +45,7 @@ struct PositionEditorView: View {
                 }
 
                 Section {
-                    Text("这些数据只用于估算保护线和参考股数；留空保护线仍会提供价格通道买卖提示，不会发送订单。")
+                    Text("留空将在可靠行情到达后按现价−2×ATR建立并保存。卖出点取价格通道与保护线中更严格的一条；只作提醒，不会发送订单。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -54,11 +62,12 @@ struct PositionEditorView: View {
                             symbol: symbol,
                             averageCost: max(0, averageCost),
                             quantity: max(0, quantity),
-                            initialStop: initialStop
+                            initialStop: initialStop,
+                            riskReferencePrice: initialStop == nil ? nil : referencePrice
                         ))
                         dismiss()
                     }
-                    .disabled(!averageCost.isFinite || !quantity.isFinite || averageCost < 0 || quantity < 0 || (quantity > 0 && averageCost <= 0) || (initialStop != nil && (!initialStop!.isFinite || initialStop! <= 0 || initialStop! >= averageCost)))
+                    .disabled(!averageCost.isFinite || !quantity.isFinite || averageCost < 0 || quantity < 0 || (quantity > 0 && averageCost <= 0) || (initialStop != nil && (!initialStop!.isFinite || initialStop! <= 0 || initialStop! >= referencePrice)))
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -70,6 +79,7 @@ struct PositionEditorView: View {
                 averageCost = position.averageCost
                 quantity = position.quantity
                 initialStop = position.initialStop
+                originalPosition = position
             }
         }
         .presentationDetents([.medium, .large])

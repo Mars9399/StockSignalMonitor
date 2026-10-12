@@ -15,6 +15,9 @@ struct SidebarView: View {
             Label("全市场股票", systemImage: "globe.americas.fill")
                 .tag(SidebarSelection.market)
 
+            Label("市场涨跌 Top 20", systemImage: "arrow.up.arrow.down.square.fill")
+                .tag(SidebarSelection.movers)
+
             Section("自选股票") {
                 ForEach(store.signals) { signal in
                     SidebarSignalRow(

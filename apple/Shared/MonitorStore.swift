@@ -211,6 +211,10 @@ public final class MonitorStore {
         do {
             var levels = try SignalCalculator.calculate(history: history, livePrice: quote.price)
             let reason = DataReliability.reason(quote: quote, history: history)
+            if stocks[index].position.initializeRiskBaseline(price: quote.price, atr: levels.atr14, eligible: isMonitoring && reason == nil && levels.isReady),
+               let data = try? JSONEncoder().encode(stocks.map(\.position)) {
+                positionDefaults?.set(data, forKey: "reliablePositions")
+            }
             if reason != nil { levels.status = .noSignal }
             stocks[index].levels = levels
             let plan = PositionPlanner.makePlan(levels: levels, position: stocks[index].position, settings: riskSettings)

@@ -34,6 +34,7 @@ targets:
         PRODUCT_NAME: StockSignalMonitorMac
         CODE_SIGN_ENTITLEMENTS: macOS/Resources/StockSignalMonitorMac.entitlements
         ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: macOS/Resources/Info.plist
       properties:

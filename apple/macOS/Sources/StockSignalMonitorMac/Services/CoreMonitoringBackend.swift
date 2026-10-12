@@ -55,7 +55,15 @@ final class CoreMonitoringBackend: MonitoringBackend {
                 pair.continuation.yield(
                     .init(
                         signals: presentations,
-                        message: message == lastMessage ? nil : message
+                        message: message == lastMessage ? nil : message,
+                        positions: Dictionary(uniqueKeysWithValues: store.stocks.map {
+                            ($0.symbol, PositionInput(
+                                averageCost: $0.position.averageCost,
+                                quantity: $0.position.quantity,
+                                initialStop: $0.position.initialStop,
+                                riskReferencePrice: $0.position.riskReferencePrice
+                            ))
+                        })
                     )
                 )
                 lastMessage = message

@@ -2,7 +2,7 @@
 
 The scanner is deliberately independent from the watchlist stream.  Yahoo's
 US-market predefined gainers/losers screen supplies the broad-market
-candidates; only the twenty displayed symbols need historical-bar downloads.
+candidates; only the forty displayed symbols need historical-bar downloads.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ import yfinance as yf
 
 from reliability import observation_reason
 from signal_monitor import calculate_levels
+
+DEFAULT_MOVER_RESULT_COUNT = 20
 
 
 @dataclass(frozen=True)
@@ -112,9 +114,13 @@ def _latest_intraday(data: pd.DataFrame, symbol: str) -> tuple[float, datetime] 
 
 
 class MarketMoverScanner:
-    """Fetch the US-market top gainers and losers, then analyze twenty names."""
+    """Fetch the US-market top gainers and losers, then analyze forty names."""
 
-    def __init__(self, candidates_per_side: int = 50, result_count: int = 10):
+    def __init__(
+        self,
+        candidates_per_side: int = 50,
+        result_count: int = DEFAULT_MOVER_RESULT_COUNT,
+    ):
         self.candidates_per_side = max(result_count, candidates_per_side)
         self.result_count = result_count
 
@@ -148,7 +154,7 @@ class MarketMoverScanner:
 
         # Yahoo's predefined screen can lag behind its chart endpoint. Refresh
         # the candidate pool with the newest one-minute close, recompute the
-        # percentage move, then rank again before selecting the displayed ten.
+        # percentage move, then rank again before selecting the displayed twenty.
         try:
             intraday = yf.download(
                 symbols,

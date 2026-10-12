@@ -26,7 +26,7 @@ import signal_monitor as signal_core
 from signal_monitor import calculate_levels, estimate_action_probabilities, load_state, record_alert, save_state, send_discord
 from tws_data import auxiliary_client_id, fetch_account_summary, fetch_intraday_bars
 from tws_positions import fetch_positions, merge_positions
-from reliability import observation_reason, NEW_YORK
+from reliability import observation_reason, initialize_risk_baseline, NEW_YORK
 
 
 APP_VERSION = "2.5.2"
@@ -196,6 +196,7 @@ def read_positions() -> dict[str, dict[str, float]]:
                 "avg_cost": max(0.0, float(values.get("avg_cost", 0))),
                 "quantity": max(0.0, float(values.get("quantity", 0))),
                 "initial_stop": values.get("initial_stop"),
+                "risk_reference_price": values.get("risk_reference_price"),
             }
             for symbol, values in raw.items()
             if isinstance(values, dict)
@@ -293,10 +294,11 @@ def build_position_plan(
 
     if quantity > 0 and avg_cost > 0:
         saved_stop = position.get("initial_stop")
-        has_saved_stop = isinstance(saved_stop, (int, float)) and math.isfinite(saved_stop) and 0 < saved_stop < avg_cost
+        reference = position.get("risk_reference_price") or avg_cost
+        has_saved_stop = isinstance(saved_stop, (int, float)) and math.isfinite(reference) and math.isfinite(saved_stop) and 0 < saved_stop < reference
         position_stop = max(entry_stop, float(saved_stop)) if has_saved_stop else entry_stop
-        risk_entry_price = avg_cost
-        risk_reference_stop = float(saved_stop) if has_saved_stop else min(entry_stop, avg_cost - 0.01)
+        risk_entry_price = reference
+        risk_reference_stop = float(saved_stop) if has_saved_stop else min(entry_stop, reference - 0.01)
         exposure_price = price
     else:
         position_stop = entry_stop
@@ -567,7 +569,7 @@ class SignalMonitorApp:
 
         actions = ttk.Frame(outer, style="Card.TFrame", padding=8)
         actions.pack(fill="x", pady=(0, 8))
-        ttk.Label(actions, text="所选股票可选保护线", style="Card.TLabel").pack(side="left")
+        ttk.Label(actions, text="保护线（留空自动 2×ATR）", style="Card.TLabel").pack(side="left")
         self.initial_stop_entry = self._dark_entry(actions, 8)
         self.initial_stop_entry.pack(side="left", padx=5)
         for label, scope in (("显示全部", "all"), ("只显示持仓", "positions")):
@@ -764,7 +766,7 @@ class SignalMonitorApp:
             ("start_maximized", "启动时最大化窗口"),
             ("remember_window_size", "退出时记住当前窗口大小"),
             ("account_visible_default", "启动时显示账户明细"),
-            ("auto_start_movers", "打开 TOP10 页时自动开始扫描"),
+            ("auto_start_movers", "打开 TOP20 页时自动开始扫描"),
             ("confirm_exit", "关闭软件前询问确认"),
         )
         start_row = 2 + len(numeric_specs)
@@ -830,7 +832,7 @@ class SignalMonitorApp:
 
     def _build_movers_tab(self) -> None:
         self.movers_card = ttk.Frame(self.notebook, style="Card.TFrame", padding=10)
-        self.notebook.add(self.movers_card, text="暴涨暴跌 TOP10")
+        self.notebook.add(self.movers_card, text="暴涨暴跌 TOP20")
 
         toolbar = ttk.Frame(self.movers_card, style="Card.TFrame")
         toolbar.pack(fill="x", pady=(0, 8))
@@ -854,8 +856,8 @@ class SignalMonitorApp:
 
         tables = ttk.Panedwindow(self.movers_card, orient="horizontal")
         tables.pack(fill="both", expand=True)
-        self.gainers_tree = self._create_mover_table(tables, "▲ 暴涨 TOP10", "#91f5c4")
-        self.losers_tree = self._create_mover_table(tables, "▼ 暴跌 TOP10", "#ffadb5")
+        self.gainers_tree = self._create_mover_table(tables, "▲ 暴涨 TOP20", "#91f5c4")
+        self.losers_tree = self._create_mover_table(tables, "▼ 暴跌 TOP20", "#ffadb5")
         configure_directional_row_tags(
             self.gainers_tree,
             {"WAIT": ("#d8f3eb", "#29474c"), "OBSERVE": ("#c8e7df", "#304950")},
@@ -1360,10 +1362,18 @@ class SignalMonitorApp:
         summary = self.account_summary
         self.account_summary_var.set(
             f"账户 {summary.get('account', '—')}  |  净资产 {self._account_money(summary, 'NetLiquidation')}"
+            f"  |  当日盈亏 {self._account_money(summary, 'DailyPnL')}"
+            f"  |  未实现盈亏 {self._account_money(summary, 'UnrealizedPnL')}"
+            f"  |  已实现盈亏 {self._account_money(summary, 'RealizedPnL')}"
+            f"  |  含贷款权益 {self._account_money(summary, 'EquityWithLoanValue')}\n"
             f"  |  可用资金 {self._account_money(summary, 'AvailableFunds')}"
             f"  |  购买力 {self._account_money(summary, 'BuyingPower')}"
             f"  |  现金 {self._account_money(summary, 'TotalCashValue')}"
-            f"  |  未实现盈亏 {self._account_money(summary, 'UnrealizedPnL')}"
+            f"  |  已结算现金 {self._account_money(summary, 'SettledCash')}"
+            f"  |  持仓总市值 {self._account_money(summary, 'GrossPositionValue')}"
+            f"  |  超额流动性 {self._account_money(summary, 'ExcessLiquidity')}"
+            f"  |  初始保证金 {self._account_money(summary, 'InitMarginReq')}"
+            f"  |  维持保证金 {self._account_money(summary, 'MaintMarginReq')}"
         )
 
     def toggle_account_details(self) -> None:
@@ -1685,18 +1695,25 @@ class SignalMonitorApp:
             quantity = float(self.quantity_entry.get().strip() or "0")
             raw_stop = self.initial_stop_entry.get().strip()
             initial_stop = float(raw_stop) if raw_stop else None
-            if initial_stop is not None and (not math.isfinite(initial_stop) or not 0 < initial_stop < avg_cost):
+            old = self.positions.get(symbol, {})
+            reference = (old.get("risk_reference_price") or avg_cost) if old.get("avg_cost") == avg_cost and old.get("quantity") == quantity else avg_cost
+            if initial_stop is not None and (not math.isfinite(initial_stop) or not 0 < initial_stop < reference):
                 raise ValueError
             if not math.isfinite(avg_cost) or not math.isfinite(quantity) or avg_cost < 0 or quantity < 0 or (quantity > 0 and avg_cost <= 0):
                 raise ValueError
         except ValueError:
-            messagebox.showwarning("持仓输入无效", "均价必须大于0，股数非负；可选保护线必须低于成本。留空仍会按价格通道给出买卖提示。")
+            messagebox.showwarning("持仓输入无效", "均价必须大于0，股数非负；保护线必须低于计划参考价。留空将在可靠行情到达后按现价−2×ATR自动建立。")
             return
 
         if quantity == 0:
             self.positions.pop(symbol, None)
         else:
-            self.positions[symbol] = {"avg_cost": avg_cost, "quantity": quantity, "initial_stop": initial_stop}
+            self.positions[symbol] = {
+                "avg_cost": avg_cost,
+                "quantity": quantity,
+                "initial_stop": initial_stop,
+                "risk_reference_price": reference if initial_stop is not None else None,
+            }
         write_positions(self.positions)
         self._apply_scope()
         self._refresh_watchlist()
@@ -2014,6 +2031,19 @@ class SignalMonitorApp:
         values = self.levels[symbol]
         status_text, status_tag = display_status(values, price)
         position = self.positions.get(symbol, {"avg_cost": 0, "quantity": 0})
+        reason = observation_reason(price, timestamp, values.get("history_date"))
+        if not self.running:
+            reason = "监控已停止"
+        initialized = initialize_risk_baseline(
+            position,
+            price,
+            float(values.get("atr14", 0)),
+            reason is None and bool(values.get("signal_ready", True)),
+        )
+        if initialized != position:
+            self.positions[symbol] = position = initialized
+            write_positions(self.positions)
+            self._append_log(f"{symbol} 自动建立保护线 ${position['initial_stop']:.4f}（参考价 ${price:.4f}，2×ATR）。")
         avg_cost = float(position.get("avg_cost", 0))
         quantity = float(position.get("quantity", 0))
         plan = build_position_plan(
@@ -2032,9 +2062,6 @@ class SignalMonitorApp:
             portfolio_value,
             available_funds,
         )
-        reason = observation_reason(price, timestamp, values.get("history_date"))
-        if not self.running:
-            reason = "监控已停止"
         if reason:
             status_text, status_tag = "仅观察", "DATA_SHORT"
             plan["action"] = f"仅观察：{reason}"
@@ -2113,6 +2140,12 @@ class SignalMonitorApp:
             return
         side = "买入" if status == "BUY_ALERT" else "卖出"
         trigger = float(values["buy_point"] if status == "BUY_ALERT" else values["stop_point"])
+        if status == "SELL_ALERT":
+            position = self.positions.get(symbol, {})
+            saved_stop = position.get("initial_stop")
+            reference = position.get("risk_reference_price") or position.get("avg_cost", 0)
+            if isinstance(saved_stop, (int, float)) and 0 < saved_stop < reference:
+                trigger = max(trigger, float(saved_stop))
         now = datetime.now(timezone.utc)
         state_key = f"{symbol}:{status}"
         alert_key = f"{state_key}:{now.date().isoformat()}"

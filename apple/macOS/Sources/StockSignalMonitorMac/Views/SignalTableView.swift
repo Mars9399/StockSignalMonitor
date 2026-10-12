@@ -154,6 +154,10 @@ private struct MonitorSummaryHeader: View {
                     .background(.green.opacity(0.12), in: Capsule())
             }
 
+            if store.preferences.provider == .ibkr {
+                TWSAccountSummaryCard(store: store)
+            }
+
             HStack(spacing: 10) {
                 Picker("显示范围", selection: $store.listScope) {
                     ForEach(SignalListScope.allCases) { scope in
@@ -196,6 +200,156 @@ private struct MonitorSummaryHeader: View {
         } message: {
             Text("自选股票不会被删除。之后可通过“重新读取持仓”从 TWS 恢复。")
         }
+    }
+}
+
+private struct TWSAccountSummaryCard: View {
+    let store: MacMonitorStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Label(
+                    store.isTWSAccountSummaryHidden
+                        ? "TWS 当前账户：••••••"
+                        : accountTitle,
+                    systemImage: "building.columns"
+                )
+                .font(.headline)
+
+                if !store.isTWSAccountSummaryHidden {
+                    Text(store.twsAccountSummaryMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Button {
+                    store.refreshTWSAccountSummary()
+                } label: {
+                    Label(
+                        store.isLoadingTWSAccountSummary ? "正在读取…" : "刷新账户",
+                        systemImage: "arrow.clockwise"
+                    )
+                }
+                .disabled(store.isLoadingTWSAccountSummary || store.isSyncingTWSPositions)
+
+                Button {
+                    store.isTWSAccountSummaryHidden.toggle()
+                } label: {
+                    Label(
+                        store.isTWSAccountSummaryHidden ? "显示账户" : "隐藏账户",
+                        systemImage: store.isTWSAccountSummaryHidden ? "eye" : "eye.slash"
+                    )
+                }
+                .help("只在本次运行中隐藏或显示账户情况")
+            }
+
+            if !store.isTWSAccountSummaryHidden {
+                if let summary = store.twsAccountSummary {
+                    Text("资产与盈亏")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 125, maximum: 190), spacing: 18)],
+                        alignment: .leading,
+                        spacing: 8
+                    ) {
+                        AccountMetric(title: "净资产", value: summary.netLiquidation, currency: summary.currency)
+                        AccountMetric(
+                            title: "当日盈亏",
+                            value: summary.dailyPnL,
+                            currency: summary.currency,
+                            colorsSignedValue: true
+                        )
+                        AccountMetric(
+                            title: "未实现盈亏",
+                            value: summary.unrealizedPnL,
+                            currency: summary.currency,
+                            colorsSignedValue: true
+                        )
+                        AccountMetric(
+                            title: "已实现盈亏",
+                            value: summary.realizedPnL,
+                            currency: summary.currency,
+                            colorsSignedValue: true
+                        )
+                        AccountMetric(title: "含贷款权益", value: summary.equityWithLoanValue, currency: summary.currency)
+                        AccountMetric(title: "持仓总市值", value: summary.grossPositionValue, currency: summary.currency)
+                    }
+
+                    Divider()
+
+                    Text("资金与保证金")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 125, maximum: 190), spacing: 18)],
+                        alignment: .leading,
+                        spacing: 8
+                    ) {
+                        AccountMetric(title: "可用资金", value: summary.availableFunds, currency: summary.currency)
+                        AccountMetric(title: "购买力", value: summary.buyingPower, currency: summary.currency)
+                        AccountMetric(title: "现金", value: summary.totalCashValue, currency: summary.currency)
+                        AccountMetric(title: "已结算现金", value: summary.settledCash, currency: summary.currency)
+                        AccountMetric(title: "超额流动性", value: summary.excessLiquidity, currency: summary.currency)
+                        AccountMetric(title: "初始保证金", value: summary.initialMargin, currency: summary.currency)
+                        AccountMetric(title: "维持保证金", value: summary.maintenanceMargin, currency: summary.currency)
+                    }
+                } else {
+                    Text(store.twsAccountSummaryMessage)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var accountTitle: String {
+        guard let account = store.twsAccountSummary?.account, !account.isEmpty else {
+            return "TWS 当前账户"
+        }
+        return "TWS 当前账户 · \(account)"
+    }
+}
+
+private struct AccountMetric: View {
+    let title: String
+    let value: Double?
+    let currency: String
+    var colorsSignedValue = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(formattedValue)
+                .font(.body.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(valueColor)
+                .lineLimit(1)
+        }
+    }
+
+    private var formattedValue: String {
+        guard let value, value.isFinite else { return "—" }
+        return value.formatted(
+            .currency(code: currency)
+                .precision(.fractionLength(2))
+        )
+    }
+
+    private var valueColor: Color {
+        guard colorsSignedValue, let value else { return .primary }
+        if value > 0 { return .green }
+        if value < 0 { return .red }
+        return .secondary
     }
 }
 

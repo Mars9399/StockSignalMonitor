@@ -40,6 +40,8 @@ struct ContentView: View {
             WatchlistView(store: store)
         case .market:
             MarketDirectoryView(store: store)
+        case .movers:
+            MarketMoversView(store: store)
         case .symbol:
             if let signal = store.selectedSignal {
                 SignalDetailView(store: store, signal: signal)
@@ -53,6 +55,7 @@ struct ContentView: View {
         switch store.selection {
         case .watchlist: "自选列表"
         case .market: "全市场股票"
+        case .movers: "市场涨跌 Top 20"
         case .symbol: store.selectedSignal?.symbol ?? "股票详情"
         case .overview, .none: "监控概览"
         }

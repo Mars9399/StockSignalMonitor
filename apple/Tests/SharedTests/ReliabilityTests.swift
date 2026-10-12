@@ -2,6 +2,30 @@ import XCTest
 @testable import StockSignalCore
 
 final class ReliabilityTests: XCTestCase {
+    func testAutomaticBaselineIsFixedAndGated() throws {
+        for cost in [60.0, 150.0] {
+            var position = Position(symbol: "TEST", averageCost: cost, quantity: 0.5)
+            XCTAssertFalse(position.initializeRiskBaseline(price: 100, atr: 5, eligible: false))
+            for atr in [0.0, -1, 60, .nan] {
+                XCTAssertFalse(position.initializeRiskBaseline(price: 100, atr: atr, eligible: true))
+            }
+            XCTAssertTrue(position.initializeRiskBaseline(price: 100, atr: 5, eligible: true))
+            XCTAssertEqual(position.initialStop, 90)
+            XCTAssertEqual(position.riskReferencePrice, 100)
+            var restored = try JSONDecoder().decode(Position.self, from: JSONEncoder().encode(position))
+            XCTAssertFalse(restored.initializeRiskBaseline(price: 80, atr: 10, eligible: true))
+            XCTAssertEqual(restored, position)
+            let levels = SignalLevels(status: .noSignal, price: 80, buyPoint: 110, stopPoint: 70,
+                riskPercent: 9, atr14: 10, trendFast: 70, trendSlow: 60, historyDays: 205,
+                quality: .standard, modelName: "test", isReady: true)
+            let plan = PositionPlanner.makePlan(levels: levels, position: restored, settings: RiskSettings())
+            XCTAssertEqual(plan.riskReductionPoint, 90)
+            XCTAssertEqual(plan.profitTarget2R, 0)
+            XCTAssertEqual(plan.profitTarget3R, 0)
+            XCTAssertEqual(plan.action, .sellSignal(shares: 0.5))
+        }
+    }
+
     struct Scenario: Decodable {
         let price: Double
         let quantity: Double

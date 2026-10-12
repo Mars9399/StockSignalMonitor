@@ -231,6 +231,7 @@ public enum PositionPlanner {
         let price = levels.price
         let atr = max(0.01, levels.atr14)
         let hasPosition = position.quantity > 0 && position.averageCost > 0
+        let reference = position.riskReferencePrice ?? position.averageCost
         let riskReductionPoint: Double
         let riskEntryPrice: Double
         let riskReferenceStop: Double
@@ -238,11 +239,11 @@ public enum PositionPlanner {
 
         if hasPosition {
             let savedStop = position.initialStop.flatMap { stop in
-                stop.isFinite && stop > 0 && stop < position.averageCost ? stop : nil
+                reference.isFinite && stop.isFinite && stop > 0 && stop < reference ? stop : nil
             }
             riskReductionPoint = max(levels.stopPoint, savedStop ?? 0)
-            riskEntryPrice = position.averageCost
-            riskReferenceStop = savedStop ?? min(levels.stopPoint, position.averageCost - 0.01)
+            riskEntryPrice = reference
+            riskReferenceStop = savedStop ?? min(levels.stopPoint, reference - 0.01)
             exposurePrice = price
         } else {
             riskReductionPoint = levels.stopPoint

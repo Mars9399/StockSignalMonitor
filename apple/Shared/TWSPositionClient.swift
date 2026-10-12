@@ -30,6 +30,90 @@ public struct TWSPositionSnapshot: Hashable, Sendable {
     }
 }
 
+public struct TWSAccountSummary: Hashable, Sendable {
+    public let account: String
+    public let currency: String
+    public let netLiquidation: Double?
+    public let dailyPnL: Double?
+    public let availableFunds: Double?
+    public let buyingPower: Double?
+    public let totalCashValue: Double?
+    public let settledCash: Double?
+    public let equityWithLoanValue: Double?
+    public let grossPositionValue: Double?
+    public let excessLiquidity: Double?
+    public let initialMargin: Double?
+    public let maintenanceMargin: Double?
+    public let unrealizedPnL: Double?
+    public let realizedPnL: Double?
+
+    public init(
+        account: String,
+        currency: String = "USD",
+        netLiquidation: Double? = nil,
+        dailyPnL: Double? = nil,
+        availableFunds: Double? = nil,
+        buyingPower: Double? = nil,
+        totalCashValue: Double? = nil,
+        settledCash: Double? = nil,
+        equityWithLoanValue: Double? = nil,
+        grossPositionValue: Double? = nil,
+        excessLiquidity: Double? = nil,
+        initialMargin: Double? = nil,
+        maintenanceMargin: Double? = nil,
+        unrealizedPnL: Double? = nil,
+        realizedPnL: Double? = nil
+    ) {
+        self.account = account
+        self.currency = currency
+        self.netLiquidation = netLiquidation
+        self.dailyPnL = dailyPnL
+        self.availableFunds = availableFunds
+        self.buyingPower = buyingPower
+        self.totalCashValue = totalCashValue
+        self.settledCash = settledCash
+        self.equityWithLoanValue = equityWithLoanValue
+        self.grossPositionValue = grossPositionValue
+        self.excessLiquidity = excessLiquidity
+        self.initialMargin = initialMargin
+        self.maintenanceMargin = maintenanceMargin
+        self.unrealizedPnL = unrealizedPnL
+        self.realizedPnL = realizedPnL
+    }
+
+    public func merging(pnl: TWSAccountPnL) -> Self {
+        Self(
+            account: account,
+            currency: currency,
+            netLiquidation: netLiquidation,
+            dailyPnL: pnl.dailyPnL,
+            availableFunds: availableFunds,
+            buyingPower: buyingPower,
+            totalCashValue: totalCashValue,
+            settledCash: settledCash,
+            equityWithLoanValue: equityWithLoanValue,
+            grossPositionValue: grossPositionValue,
+            excessLiquidity: excessLiquidity,
+            initialMargin: initialMargin,
+            maintenanceMargin: maintenanceMargin,
+            unrealizedPnL: pnl.unrealizedPnL ?? unrealizedPnL,
+            realizedPnL: pnl.realizedPnL ?? realizedPnL
+        )
+    }
+}
+
+public struct TWSAccountPnL: Hashable, Sendable {
+    public let dailyPnL: Double?
+    public let unrealizedPnL: Double?
+    public let realizedPnL: Double?
+
+    public init(dailyPnL: Double?, unrealizedPnL: Double?, realizedPnL: Double?) {
+        self.dailyPnL = dailyPnL
+        self.unrealizedPnL = unrealizedPnL
+        self.realizedPnL = realizedPnL
+    }
+}
+
 public enum TWSPositionClientError: LocalizedError, Sendable {
     case invalidHost
     case connectionFailed(String)
@@ -38,6 +122,10 @@ public enum TWSPositionClientError: LocalizedError, Sendable {
     case malformedHandshake
     case apiError(code: Int, message: String)
     case connectionClosed
+    case accountSummaryTimedOut
+    case accountSummaryUnavailable(String)
+    case pnlTimedOut
+    case pnlUnavailable(String)
 
     public var errorDescription: String? {
         switch self {
@@ -55,12 +143,23 @@ public enum TWSPositionClientError: LocalizedError, Sendable {
             "TWS API \(code)：\(message)"
         case .connectionClosed:
             "TWS 在持仓同步完成前关闭了连接。"
+        case .accountSummaryTimedOut:
+            "读取 TWS 账户情况超时。"
+        case let .accountSummaryUnavailable(account):
+            account.isEmpty
+                ? "TWS 未返回账户情况。"
+                : "TWS 未返回账户 \(account) 的账户情况。"
+        case .pnlTimedOut:
+            "读取 TWS 账户盈亏超时。请在 TWS API 设置中启用“下载持仓时准备投资组合盈亏数据”。"
+        case let .pnlUnavailable(account):
+            account.isEmpty
+                ? "需要明确的 TWS 账户才能读取实时盈亏。"
+                : "TWS 未返回账户 \(account) 的实时盈亏。"
         }
     }
 }
 
-/// Read-only TWS Socket API client. It intentionally implements only the
-/// connection handshake and reqPositions/cancelPositions messages.
+/// Read-only TWS Socket API client for positions and headline account balances.
 public actor TWSPositionClient {
     public init() {}
 
@@ -73,6 +172,47 @@ public actor TWSPositionClient {
         let seconds = max(1, timeout.components.seconds)
         let session = TWSPositionSession(host: host, port: port, clientID: clientID, timeout: .seconds(Int(seconds)))
         return try await session.fetch()
+    }
+
+    public func fetchAccountSummary(
+        host: String = "127.0.0.1",
+        port: UInt16 = 7497,
+        clientID: Int = 118,
+        accountID: String = "",
+        timeout: Duration = .seconds(12)
+    ) async throws -> TWSAccountSummary {
+        let seconds = max(1, timeout.components.seconds)
+        let session = TWSAccountSummarySession(
+            host: host,
+            port: port,
+            clientID: clientID,
+            accountID: accountID,
+            timeout: .seconds(Int(seconds))
+        )
+        return try await session.fetch()
+    }
+
+    public func fetchPnL(
+        host: String = "127.0.0.1",
+        port: UInt16 = 7497,
+        clientID: Int = 119,
+        accountID: String,
+        timeout: Duration = .seconds(6)
+    ) async throws -> TWSAccountPnL {
+        let seconds = max(1, timeout.components.seconds)
+        let session = TWSPnLSession(
+            host: host,
+            port: port,
+            clientID: clientID,
+            accountID: accountID,
+            timeout: .seconds(Int(seconds))
+        )
+        return try await session.fetch()
+    }
+
+    public nonisolated static func auxiliaryClientID(base: Int, offset: Int = 101) -> Int {
+        let upperBound = Int64(Int32.max)
+        return Int((Int64(max(0, base)) + Int64(max(1, offset))) % upperBound)
     }
 }
 
@@ -256,6 +396,448 @@ private final class TWSPositionSession: @unchecked Sendable {
     }
 }
 
+private final class TWSAccountSummarySession: @unchecked Sendable {
+    private enum Phase { case handshake, apiReady, summary, finished }
+
+    private static let requestID = 9_101
+    private static let tags = [
+        "NetLiquidation",
+        "TotalCashValue",
+        "SettledCash",
+        "BuyingPower",
+        "AvailableFunds",
+        "EquityWithLoanValue",
+        "GrossPositionValue",
+        "ExcessLiquidity",
+        "InitMarginReq",
+        "MaintMarginReq",
+        "UnrealizedPnL",
+        "RealizedPnL"
+    ].joined(separator: ",")
+
+    private let host: String
+    private let port: UInt16
+    private let clientID: Int
+    private let accountID: String
+    private let timeout: DispatchTimeInterval
+    private let queue = DispatchQueue(label: "com.mars9399.StockSignalMonitor.tws-account-summary")
+
+    private var connection: NWConnection?
+    private var continuation: CheckedContinuation<TWSAccountSummary, Error>?
+    private var timeoutWorkItem: DispatchWorkItem?
+    private var receiveBuffer = Data()
+    private var records: [String: [String: TWSAccountValue]] = [:]
+    private var phase: Phase = .handshake
+    private var requestedSummary = false
+
+    init(host: String, port: UInt16, clientID: Int, accountID: String, timeout: DispatchTimeInterval) {
+        self.host = host
+        self.port = port
+        self.clientID = clientID
+        self.accountID = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.timeout = timeout
+    }
+
+    func fetch() async throws -> TWSAccountSummary {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                queue.async { [weak self] in self?.start(continuation: continuation) }
+            }
+        } onCancel: {
+            self.queue.async { [weak self] in self?.finish(.failure(CancellationError())) }
+        }
+    }
+
+    private func start(continuation: CheckedContinuation<TWSAccountSummary, Error>) {
+        guard !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let endpointPort = NWEndpoint.Port(rawValue: port) else {
+            continuation.resume(throwing: TWSPositionClientError.invalidHost)
+            return
+        }
+
+        self.continuation = continuation
+        let connection = NWConnection(host: NWEndpoint.Host(host), port: endpointPort, using: .tcp)
+        self.connection = connection
+        connection.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            self.queue.async {
+                switch state {
+                case .ready:
+                    self.send(TWSWireCodec.clientHandshake())
+                    self.receiveNext()
+                case let .failed(error):
+                    self.finish(.failure(TWSPositionClientError.connectionFailed(error.localizedDescription)))
+                case .cancelled:
+                    if self.phase != .finished {
+                        self.finish(.failure(TWSPositionClientError.connectionClosed))
+                    }
+                default:
+                    break
+                }
+            }
+        }
+        connection.start(queue: queue)
+
+        let timeoutWorkItem = DispatchWorkItem { [weak self] in
+            self?.finish(.failure(TWSPositionClientError.accountSummaryTimedOut))
+        }
+        self.timeoutWorkItem = timeoutWorkItem
+        queue.asyncAfter(deadline: .now() + timeout, execute: timeoutWorkItem)
+    }
+
+    private func receiveNext() {
+        connection?.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, complete, error in
+            guard let self else { return }
+            self.queue.async {
+                if let data, !data.isEmpty {
+                    self.receiveBuffer.append(data)
+                    self.processFrames()
+                }
+                if let error {
+                    self.finish(.failure(TWSPositionClientError.connectionFailed(error.localizedDescription)))
+                } else if complete {
+                    self.finish(.failure(TWSPositionClientError.connectionClosed))
+                } else if self.phase != .finished {
+                    self.receiveNext()
+                }
+            }
+        }
+    }
+
+    private func processFrames() {
+        while let payload = TWSWireCodec.takeFrame(from: &receiveBuffer) {
+            let fields = TWSWireCodec.fields(from: payload)
+            guard !fields.isEmpty else { continue }
+            if phase == .handshake {
+                processHandshake(fields)
+            } else {
+                processMessage(fields)
+            }
+        }
+    }
+
+    private func processHandshake(_ fields: [String]) {
+        guard fields.count >= 2, let version = Int(fields[0]) else {
+            finish(.failure(TWSPositionClientError.malformedHandshake))
+            return
+        }
+        guard version >= 67 else {
+            finish(.failure(TWSPositionClientError.unsupportedServer(version)))
+            return
+        }
+
+        phase = .apiReady
+        var startFields = ["71", "2", String(clientID)]
+        if version >= 72 { startFields.append("") }
+        send(TWSWireCodec.frame(fields: startFields))
+    }
+
+    private func processMessage(_ fields: [String]) {
+        guard let messageID = Int(fields[0]) else { return }
+        switch messageID {
+        case 9:
+            guard !requestedSummary else { return }
+            requestedSummary = true
+            phase = .summary
+            send(TWSWireCodec.frame(fields: [
+                "62", "1", String(Self.requestID), "All", Self.tags
+            ]))
+
+        case 63:
+            guard let value = TWSWireCodec.accountSummaryValue(from: fields) else { return }
+            guard accountID.isEmpty || value.account.caseInsensitiveCompare(accountID) == .orderedSame else { return }
+            var accountValues = records[value.account] ?? [:]
+            if let existing = accountValues[value.tag] {
+                if value.currencyPreference >= existing.currencyPreference {
+                    accountValues[value.tag] = value
+                }
+            } else {
+                accountValues[value.tag] = value
+            }
+            records[value.account] = accountValues
+
+        case 64:
+            guard requestedSummary else { return }
+            do {
+                finish(.success(try makeSummary()))
+            } catch {
+                finish(.failure(error))
+            }
+
+        case 4:
+            processError(fields)
+
+        default:
+            break
+        }
+    }
+
+    private func makeSummary() throws -> TWSAccountSummary {
+        let selectedAccount: String
+        if accountID.isEmpty {
+            guard let first = records.keys.sorted().first else {
+                throw TWSPositionClientError.accountSummaryUnavailable("")
+            }
+            selectedAccount = first
+        } else if let match = records.keys.first(where: {
+            $0.caseInsensitiveCompare(accountID) == .orderedSame
+        }) {
+            selectedAccount = match
+        } else {
+            throw TWSPositionClientError.accountSummaryUnavailable(accountID)
+        }
+
+        guard let values = records[selectedAccount] else {
+            throw TWSPositionClientError.accountSummaryUnavailable(selectedAccount)
+        }
+        let currency = values["NetLiquidation"]?.currency
+            ?? values["AvailableFunds"]?.currency
+            ?? values.values.first?.currency
+            ?? "USD"
+        return TWSAccountSummary(
+            account: selectedAccount,
+            currency: currency == "BASE" || currency.isEmpty ? "USD" : currency,
+            netLiquidation: values["NetLiquidation"]?.value,
+            availableFunds: values["AvailableFunds"]?.value,
+            buyingPower: values["BuyingPower"]?.value,
+            totalCashValue: values["TotalCashValue"]?.value,
+            settledCash: values["SettledCash"]?.value,
+            equityWithLoanValue: values["EquityWithLoanValue"]?.value,
+            grossPositionValue: values["GrossPositionValue"]?.value,
+            excessLiquidity: values["ExcessLiquidity"]?.value,
+            initialMargin: values["InitMarginReq"]?.value,
+            maintenanceMargin: values["MaintMarginReq"]?.value,
+            unrealizedPnL: values["UnrealizedPnL"]?.value,
+            realizedPnL: values["RealizedPnL"]?.value
+        )
+    }
+
+    private func processError(_ fields: [String]) {
+        guard fields.count >= 5, let requestID = Int(fields[2]), let code = Int(fields[3]) else { return }
+        let informationalCodes: Set<Int> = [2104, 2106, 2107, 2108, 2158, 2176]
+        guard !informationalCodes.contains(code) else { return }
+        if requestID == Self.requestID || [502, 503, 504, 506].contains(code) {
+            finish(.failure(TWSPositionClientError.apiError(code: code, message: fields[4])))
+        }
+    }
+
+    private func send(_ data: Data) {
+        connection?.send(content: data, completion: .contentProcessed { [weak self] error in
+            guard let error else { return }
+            self?.queue.async {
+                self?.finish(.failure(TWSPositionClientError.connectionFailed(error.localizedDescription)))
+            }
+        })
+    }
+
+    private func finish(_ result: Result<TWSAccountSummary, Error>) {
+        guard phase != .finished else { return }
+        phase = .finished
+        timeoutWorkItem?.cancel()
+        timeoutWorkItem = nil
+        connection?.stateUpdateHandler = nil
+        connection?.cancel()
+        connection = nil
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+}
+
+private final class TWSPnLSession: @unchecked Sendable {
+    private enum Phase { case handshake, apiReady, pnl, finished }
+
+    private static let requestID = 9_102
+
+    private let host: String
+    private let port: UInt16
+    private let clientID: Int
+    private let accountID: String
+    private let timeout: DispatchTimeInterval
+    private let queue = DispatchQueue(label: "com.mars9399.StockSignalMonitor.tws-pnl")
+
+    private var connection: NWConnection?
+    private var continuation: CheckedContinuation<TWSAccountPnL, Error>?
+    private var timeoutWorkItem: DispatchWorkItem?
+    private var receiveBuffer = Data()
+    private var phase: Phase = .handshake
+    private var serverVersion = 0
+    private var requestedPnL = false
+
+    init(host: String, port: UInt16, clientID: Int, accountID: String, timeout: DispatchTimeInterval) {
+        self.host = host
+        self.port = port
+        self.clientID = clientID
+        self.accountID = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.timeout = timeout
+    }
+
+    func fetch() async throws -> TWSAccountPnL {
+        guard !accountID.isEmpty else {
+            throw TWSPositionClientError.pnlUnavailable("")
+        }
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                queue.async { [weak self] in self?.start(continuation: continuation) }
+            }
+        } onCancel: {
+            self.queue.async { [weak self] in self?.finish(.failure(CancellationError())) }
+        }
+    }
+
+    private func start(continuation: CheckedContinuation<TWSAccountPnL, Error>) {
+        guard !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let endpointPort = NWEndpoint.Port(rawValue: port) else {
+            continuation.resume(throwing: TWSPositionClientError.invalidHost)
+            return
+        }
+
+        self.continuation = continuation
+        let connection = NWConnection(host: NWEndpoint.Host(host), port: endpointPort, using: .tcp)
+        self.connection = connection
+        connection.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            self.queue.async {
+                switch state {
+                case .ready:
+                    self.send(TWSWireCodec.clientHandshake())
+                    self.receiveNext()
+                case let .failed(error):
+                    self.finish(.failure(TWSPositionClientError.connectionFailed(error.localizedDescription)))
+                case .cancelled:
+                    if self.phase != .finished {
+                        self.finish(.failure(TWSPositionClientError.connectionClosed))
+                    }
+                default:
+                    break
+                }
+            }
+        }
+        connection.start(queue: queue)
+
+        let timeoutWorkItem = DispatchWorkItem { [weak self] in
+            self?.finish(.failure(TWSPositionClientError.pnlTimedOut))
+        }
+        self.timeoutWorkItem = timeoutWorkItem
+        queue.asyncAfter(deadline: .now() + timeout, execute: timeoutWorkItem)
+    }
+
+    private func receiveNext() {
+        connection?.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, complete, error in
+            guard let self else { return }
+            self.queue.async {
+                if let data, !data.isEmpty {
+                    self.receiveBuffer.append(data)
+                    self.processFrames()
+                }
+                if let error {
+                    self.finish(.failure(TWSPositionClientError.connectionFailed(error.localizedDescription)))
+                } else if complete {
+                    self.finish(.failure(TWSPositionClientError.connectionClosed))
+                } else if self.phase != .finished {
+                    self.receiveNext()
+                }
+            }
+        }
+    }
+
+    private func processFrames() {
+        while let payload = TWSWireCodec.takeFrame(from: &receiveBuffer) {
+            let fields = TWSWireCodec.fields(from: payload)
+            guard !fields.isEmpty else { continue }
+            if phase == .handshake {
+                processHandshake(fields)
+            } else {
+                processMessage(fields)
+            }
+        }
+    }
+
+    private func processHandshake(_ fields: [String]) {
+        guard fields.count >= 2, let version = Int(fields[0]) else {
+            finish(.failure(TWSPositionClientError.malformedHandshake))
+            return
+        }
+        guard version >= 127 else {
+            finish(.failure(TWSPositionClientError.unsupportedServer(version)))
+            return
+        }
+
+        serverVersion = version
+        phase = .apiReady
+        var startFields = ["71", "2", String(clientID)]
+        if version >= 72 { startFields.append("") }
+        send(TWSWireCodec.frame(fields: startFields))
+    }
+
+    private func processMessage(_ fields: [String]) {
+        guard let messageID = Int(fields[0]) else { return }
+        switch messageID {
+        case 9:
+            guard !requestedPnL else { return }
+            requestedPnL = true
+            phase = .pnl
+            send(TWSWireCodec.frame(fields: [
+                "92", String(Self.requestID), accountID, ""
+            ]))
+
+        case 94:
+            guard let pnl = TWSWireCodec.pnl(from: fields, serverVersion: serverVersion) else { return }
+            finish(.success(pnl))
+
+        case 4:
+            processError(fields)
+
+        default:
+            break
+        }
+    }
+
+    private func processError(_ fields: [String]) {
+        guard fields.count >= 5, let requestID = Int(fields[2]), let code = Int(fields[3]) else { return }
+        let informationalCodes: Set<Int> = [2104, 2106, 2107, 2108, 2158, 2176]
+        guard !informationalCodes.contains(code) else { return }
+        if requestID == Self.requestID || [502, 503, 504, 506].contains(code) {
+            finish(.failure(TWSPositionClientError.apiError(code: code, message: fields[4])))
+        }
+    }
+
+    private func send(_ data: Data) {
+        connection?.send(content: data, completion: .contentProcessed { [weak self] error in
+            guard let error else { return }
+            self?.queue.async {
+                self?.finish(.failure(TWSPositionClientError.connectionFailed(error.localizedDescription)))
+            }
+        })
+    }
+
+    private func finish(_ result: Result<TWSAccountPnL, Error>) {
+        guard phase != .finished else { return }
+        phase = .finished
+        timeoutWorkItem?.cancel()
+        timeoutWorkItem = nil
+        connection?.stateUpdateHandler = nil
+        connection?.cancel()
+        connection = nil
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+}
+
+struct TWSAccountValue: Hashable, Sendable {
+    let account: String
+    let tag: String
+    let value: Double
+    let currency: String
+
+    var currencyPreference: Int {
+        switch currency.uppercased() {
+        case "USD": 2
+        case "BASE": 1
+        default: 0
+        }
+    }
+}
+
 enum TWSWireCodec {
     static let minimumClientVersion = 100
     static let maximumClientVersion = 157
@@ -333,6 +915,40 @@ enum TWSWireCodec {
             quantity: serverVersion >= 101 ? quantity : quantity.rounded(),
             averageCost: averageCost
         )
+    }
+
+    static func accountSummaryValue(from fields: [String]) -> TWSAccountValue? {
+        guard fields.count >= 7,
+              fields[0] == "63",
+              let value = normalizedDouble(fields[5]) else { return nil }
+        return TWSAccountValue(
+            account: fields[3],
+            tag: fields[4],
+            value: value,
+            currency: fields[6]
+        )
+    }
+
+    static func pnl(from fields: [String], serverVersion: Int) -> TWSAccountPnL? {
+        guard fields.count >= 3,
+              fields[0] == "94",
+              Int(fields[1]) != nil else { return nil }
+        return TWSAccountPnL(
+            dailyPnL: normalizedDouble(fields[2]),
+            unrealizedPnL: serverVersion >= 129 && fields.indices.contains(3)
+                ? normalizedDouble(fields[3])
+                : nil,
+            realizedPnL: serverVersion >= 135 && fields.indices.contains(4)
+                ? normalizedDouble(fields[4])
+                : nil
+        )
+    }
+
+    private static func normalizedDouble(_ rawValue: String) -> Double? {
+        guard let value = Double(rawValue.replacingOccurrences(of: ",", with: "")),
+              value.isFinite,
+              abs(value) < 1e300 else { return nil }
+        return value
     }
 }
 #endif

@@ -100,4 +100,6 @@ def merge_positions(current, snapshots, previously_imported, account=""):
         old = current.get(symbol, {})
         if old.get("quantity") == total["quantity"] and abs(old.get("avg_cost", 0) - result[symbol]["avg_cost"]) < 0.000001 and old.get("initial_stop") is not None:
             result[symbol]["initial_stop"] = old["initial_stop"]
+            if old.get("risk_reference_price") is not None:
+                result[symbol]["risk_reference_price"] = old["risk_reference_price"]
     return result, sorted(totals), skipped

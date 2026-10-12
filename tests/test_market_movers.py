@@ -6,10 +6,20 @@ from datetime import timezone
 
 import pandas as pd
 
-from market_movers import MarketMoverWorker, _latest_intraday, analyze_mover_opportunity
+from market_movers import (
+    DEFAULT_MOVER_RESULT_COUNT,
+    MarketMoverScanner,
+    MarketMoverWorker,
+    _latest_intraday,
+    analyze_mover_opportunity,
+)
 
 
 class MarketMoverAnalysisTests(unittest.TestCase):
+    def test_default_result_count_is_twenty_per_side(self):
+        self.assertEqual(DEFAULT_MOVER_RESULT_COUNT, 20)
+        self.assertEqual(MarketMoverScanner().result_count, 20)
+
     def values(self, status, price, buy=100):
         return {
             "signal_ready": True,

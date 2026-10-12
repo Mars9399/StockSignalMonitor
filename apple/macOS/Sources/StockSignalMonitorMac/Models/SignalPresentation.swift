@@ -88,6 +88,7 @@ struct PositionInput: Codable, Hashable, Sendable {
     var averageCost: Double = 0
     var quantity: Double = 0
     var initialStop: Double? = nil
+    var riskReferencePrice: Double? = nil
 
     var isEmpty: Bool { averageCost <= 0 || quantity <= 0 }
 }
@@ -110,5 +111,6 @@ enum SidebarSelection: Hashable {
     case overview
     case watchlist
     case market
+    case movers
     case symbol(String)
 }

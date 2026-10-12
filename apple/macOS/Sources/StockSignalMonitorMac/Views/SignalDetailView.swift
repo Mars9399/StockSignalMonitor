@@ -145,6 +145,7 @@ private struct DetailRow: View {
 
 private struct PositionEditorCard: View {
     let symbol: String
+    let originalPosition: PositionInput
     let onSave: (PositionInput) -> Void
 
     @State private var averageCost: Double?
@@ -153,6 +154,7 @@ private struct PositionEditorCard: View {
 
     init(symbol: String, position: PositionInput, onSave: @escaping (PositionInput) -> Void) {
         self.symbol = symbol
+        self.originalPosition = position
         self.onSave = onSave
         _averageCost = State(initialValue: position.averageCost > 0 ? position.averageCost : nil)
         _quantity = State(initialValue: position.quantity > 0 ? position.quantity : nil)
@@ -176,10 +178,10 @@ private struct PositionEditorCard: View {
 
                 Spacer()
 
-                LabeledContent("可选保护线") {
-                    TextField("留空仅观察", value: $initialStop, format: .number)
+                LabeledContent("保护线") {
+                    TextField("留空自动建立", value: $initialStop, format: .number)
                         .frame(width: 100)
-                        .help("低于持仓成本时可收紧卖出点；留空仍按价格通道提示，且不会执行订单。")
+                        .help("可靠行情到达后按现价−2×ATR自动建立；卖出点取价格通道与保护线中更严格的一条。")
                 }
 
                 Button("清除") {
@@ -189,18 +191,28 @@ private struct PositionEditorCard: View {
                 }
 
                 Button("保存持仓") {
-                    onSave(.init(averageCost: averageCost ?? 0, quantity: quantity ?? 0, initialStop: initialStop))
+                    onSave(.init(averageCost: averageCost ?? 0, quantity: quantity ?? 0, initialStop: initialStop, riskReferencePrice: initialStop == nil ? nil : referencePrice))
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!isValid)
             }
             .padding(.vertical, 4)
+            Text("留空会自动建立并持久化 2×ATR 保护线；只作提醒，不会发送订单。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .id(symbol)
     }
 
     private var isValid: Bool {
         guard let averageCost, let quantity else { return false }
-        return averageCost.isFinite && quantity.isFinite && averageCost > 0 && quantity > 0 && (initialStop == nil || (initialStop!.isFinite && initialStop! > 0 && initialStop! < averageCost))
+        return averageCost.isFinite && quantity.isFinite && averageCost > 0 && quantity > 0 && (initialStop == nil || (initialStop!.isFinite && initialStop! > 0 && initialStop! < referencePrice))
+    }
+
+    private var referencePrice: Double {
+        if averageCost == originalPosition.averageCost && quantity == originalPosition.quantity {
+            return originalPosition.riskReferencePrice ?? originalPosition.averageCost
+        }
+        return averageCost ?? 0
     }
 }

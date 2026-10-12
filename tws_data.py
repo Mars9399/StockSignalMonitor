@@ -11,9 +11,13 @@ INFORMATIONAL_CODES = {2104, 2106, 2107, 2108, 2158, 2176}
 ACCOUNT_TAGS = (
     "NetLiquidation",
     "TotalCashValue",
+    "SettledCash",
     "BuyingPower",
     "AvailableFunds",
+    "EquityWithLoanValue",
+    "GrossPositionValue",
     "ExcessLiquidity",
+    "InitMarginReq",
     "MaintMarginReq",
     "UnrealizedPnL",
     "RealizedPnL",
@@ -28,7 +32,7 @@ def auxiliary_client_id(base_client_id: int, offset: int) -> int:
 def _number(value: str) -> float | None:
     try:
         result = float(str(value).replace(",", ""))
-        return result if math.isfinite(result) else None
+        return result if math.isfinite(result) and abs(result) < 1e300 else None
     except (TypeError, ValueError):
         return None
 
@@ -46,8 +50,11 @@ def fetch_account_summary(
 
     done = threading.Event()
     ready = threading.Event()
+    pnl_done = threading.Event()
     records: dict[str, dict[str, tuple[str, str]]] = {}
+    pnl_values: dict[str, float] = {}
     error_message: list[str] = []
+    pnl_error: list[str] = []
 
     class AccountApp(EWrapper, EClient):
         def __init__(self):
@@ -67,8 +74,24 @@ def fetch_account_summary(
         def accountSummaryEnd(self, reqId):
             done.set()
 
+        def pnl(self, reqId, dailyPnL, unrealizedPnL, realizedPnL):
+            values = {
+                "DailyPnL": dailyPnL,
+                "UnrealizedPnL": unrealizedPnL,
+                "RealizedPnL": realizedPnL,
+            }
+            for key, value in values.items():
+                number = _number(value)
+                if number is not None:
+                    pnl_values[key] = number
+            pnl_done.set()
+
         def error(self, reqId, errorCode, errorString, advancedOrderRejectJson=""):
             if errorCode in INFORMATIONAL_CODES:
+                return
+            if reqId == 9102:
+                pnl_error.append(f"TWS {errorCode}: {errorString}")
+                pnl_done.set()
                 return
             error_message.append(f"TWS {errorCode}: {errorString}")
             ready.set()
@@ -109,10 +132,17 @@ def fetch_account_summary(
                 result[tag] = number
             if currency and currency not in {"BASE"}:
                 result["currency"] = currency
+        app.reqPnL(9102, selected_account, "")
+        if pnl_done.wait(min(timeout, 6)) and not pnl_error:
+            result.update(pnl_values)
         return result
     finally:
         try:
             app.cancelAccountSummary(9101)
+        except Exception:
+            pass
+        try:
+            app.cancelPnL(9102)
         except Exception:
             pass
         if app.isConnected():
