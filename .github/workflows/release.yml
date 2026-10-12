@@ -99,7 +99,7 @@ jobs:
           APP="apple/.releaseDerivedData/Build/Products/Release/StockSignalMonitorMac.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
           codesign -d --entitlements :- "$APP" 2>&1 | grep -q "com.apple.security.network.client"
-          test "$(defaults read "$APP/Contents/Info" CFBundleShortVersionString)" = "$VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$VERSION"
           file "$APP/Contents/MacOS/StockSignalMonitorMac" | grep -q "x86_64"
           file "$APP/Contents/MacOS/StockSignalMonitorMac" | grep -q "arm64"
       - uses: actions/upload-artifact@v4
