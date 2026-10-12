@@ -1,6 +1,7 @@
 name: StockSignalMonitorApple
 
 options:
+  xcodeVersion: "16.4"
   bundleIdPrefix: com.mars9399
   deploymentTarget:
     iOS: "17.0"

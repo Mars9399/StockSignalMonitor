@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/release-version
+      - .github/workflows/release.yml
   workflow_dispatch:
     inputs:
       version:
@@ -55,7 +56,7 @@ jobs:
           if-no-files-found: error
 
   build-macos:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
