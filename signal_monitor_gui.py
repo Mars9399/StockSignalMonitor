@@ -20,16 +20,22 @@ from dotenv import load_dotenv
 import yfinance as yf
 
 from data_providers import AlpacaWorker, IBKRWorker, MassiveWorker, ProviderWorker, YahooWorker
+from explain import explain_suggestion
 from market_directory import MarketDirectoryClient, MarketDirectoryPage
 from market_movers import MarketMoverWorker, MoverResult
+from monitor_settings import read_monitor_settings, write_monitor_settings
+from portfolio_insights import build_portfolio_insight
 import signal_monitor as signal_core
+from signal_filters import apply_signal_filters, feed_profile_label
 from signal_monitor import calculate_levels, estimate_action_probabilities, load_state, record_alert, save_state, send_discord
+from signal_replay import event_watch_hints, replay_alerts
+from suggestion import build_suggestion
 from tws_data import auxiliary_client_id, fetch_account_summary, fetch_intraday_bars
 from tws_positions import fetch_positions, merge_positions
 from reliability import observation_reason, initialize_risk_baseline, NEW_YORK
 
 
-APP_VERSION = "2.5.3"
+APP_VERSION = "2.6.0-test"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 BASE_DIR = (
@@ -48,6 +54,7 @@ NAMES_FILE = BASE_DIR / "stock_names.json"
 PROVIDER_FILE = BASE_DIR / "data_provider.txt"
 TWS_IMPORT_FILE = BASE_DIR / "tws_imported_symbols.json"
 UI_SETTINGS_FILE = BASE_DIR / "ui_settings.json"
+MONITOR_SETTINGS_FILE = BASE_DIR / "monitor_settings.json"
 TWS_PROVIDER = "IBKR TWS + Yahoo 行情"
 DEFAULT_UI_SETTINGS = {
     "window_width": 1420,
@@ -275,6 +282,9 @@ def build_position_plan(
     account_value: float,
     risk_pct: float,
     max_position_pct: float,
+    *,
+    take_profit_atr_multiple: float = 3.0,
+    enable_take_profit_hint: bool = True,
 ) -> dict[str, float | int | str]:
     if not values.get("signal_ready", True):
         return {
@@ -283,6 +293,7 @@ def build_position_plan(
             "target_3r": 0.0,
             "max_shares": 0,
             "action": "历史不足：暂停买卖与仓位意见",
+            "take_profit": 0.0,
         }
     price = float(values["price"])
     buy_point = float(values["buy_point"])
@@ -291,6 +302,7 @@ def build_position_plan(
     quantity = float(position.get("quantity", 0))
     avg_cost = float(position.get("avg_cost", 0))
     status = str(values["status"])
+    take_profit = 0.0
 
     if quantity > 0 and avg_cost > 0:
         saved_stop = position.get("initial_stop")
@@ -300,6 +312,7 @@ def build_position_plan(
         risk_entry_price = reference
         risk_reference_stop = float(saved_stop) if has_saved_stop else min(entry_stop, reference - 0.01)
         exposure_price = price
+        take_profit = avg_cost + max(0.5, float(take_profit_atr_multiple)) * atr
     else:
         position_stop = entry_stop
         risk_entry_price = buy_point
@@ -320,8 +333,12 @@ def build_position_plan(
             action = f"买入提示：参考最多加 {add_shares} 股" if add_shares else "买入提示：当前持仓已达参考上限"
         elif quantity > max_shares:
             action = f"持有；仓位高于参考上限 {quantity - max_shares:g} 股"
+        elif enable_take_profit_hint and take_profit > 0 and price >= take_profit:
+            action = f"触及规则止盈参考 ${take_profit:,.2f}；可关注减持（非自动）"
         else:
             action = f"持有；卖出触发点 ${position_stop:,.2f}"
+            if enable_take_profit_hint and take_profit > 0:
+                action += f" · 止盈参考 ${take_profit:,.2f}"
     elif status == "BUY_ALERT":
         action = f"买入提示：参考上限 {max_shares} 股"
     elif status == "SELL_ALERT":
@@ -335,6 +352,7 @@ def build_position_plan(
         "target_3r": 0.0,
         "max_shares": max_shares,
         "action": action,
+        "take_profit": take_profit,
     }
 
 
@@ -371,6 +389,9 @@ class SignalMonitorApp:
         self.pending_tws_start = False
         self.symbols = read_watchlist()
         self.levels: dict[str, dict] = {}
+        self.suggestions: dict[str, object] = {}
+        self.benchmark_change_pct: float | None = None
+        self.monitor_settings = read_monitor_settings(MONITOR_SETTINGS_FILE)
         self.alert_state = load_state()
         self.positions = read_positions()
         self.risk_settings = read_risk_settings()
@@ -406,6 +427,8 @@ class SignalMonitorApp:
         self.account_summary: dict = {}
         self.account_details_visible = bool(self.ui_settings["account_visible_default"])
         self.account_summary_var = tk.StringVar(value="TWS 当前账户：尚未读取")
+        self.portfolio_summary_var = tk.StringVar(value="组合摘要：启动监控或保存持仓后显示")
+        self.connection_detail_var = tk.StringVar(value="测试版 2.6.0 · P0–P3 优化")
 
         self._configure_style()
         self._build_ui()
@@ -502,6 +525,14 @@ class SignalMonitorApp:
         )
         self.account_refresh_button.pack(side="right", padx=(0, 6))
 
+        portfolio_card = ttk.Frame(outer, style="Card.TFrame", padding=(12, 8))
+        portfolio_card.pack(fill="x", pady=(0, 10))
+        ttk.Label(portfolio_card, textvariable=self.portfolio_summary_var, style="Account.TLabel").pack(side="left", fill="x", expand=True)
+        ttk.Button(portfolio_card, text="策略设置", style="Secondary.TButton", command=self.open_strategy_settings).pack(side="right")
+        ttk.Button(portfolio_card, text="解释建议", style="Secondary.TButton", command=self.explain_selected_suggestion).pack(side="right", padx=(0, 6))
+        ttk.Button(portfolio_card, text="告警回放", style="Secondary.TButton", command=self.show_alert_replay).pack(side="right", padx=(0, 6))
+        ttk.Button(portfolio_card, text="事件观察", style="Secondary.TButton", command=self.show_event_watch).pack(side="right", padx=(0, 6))
+
         controls = ttk.Frame(outer, style="Card.TFrame", padding=14)
         controls.pack(fill="x", pady=(0, 14))
         ttk.Label(controls, text="股票代码", style="Card.TLabel").pack(side="left", padx=(0, 8))
@@ -526,6 +557,7 @@ class SignalMonitorApp:
             command=self.open_ui_settings,
         )
         self.ui_settings_button.pack(side="left", padx=3)
+        ttk.Button(controls, text="策略设置", style="Secondary.TButton", command=self.open_strategy_settings).pack(side="left", padx=3)
         ttk.Label(controls, text="数据源", style="Card.TLabel").pack(side="left", padx=(16, 6))
         self.provider_combo = ttk.Combobox(
             controls,
@@ -569,7 +601,7 @@ class SignalMonitorApp:
 
         actions = ttk.Frame(outer, style="Card.TFrame", padding=8)
         actions.pack(fill="x", pady=(0, 8))
-        ttk.Label(actions, text="保护线（留空自动 2×ATR）", style="Card.TLabel").pack(side="left")
+        ttk.Label(actions, text="保护线（留空按策略ATR倍数自动）", style="Card.TLabel").pack(side="left")
         self.initial_stop_entry = self._dark_entry(actions, 8)
         self.initial_stop_entry.pack(side="left", padx=5)
         for label, scope in (("显示全部", "all"), ("只显示持仓", "positions")):
@@ -599,10 +631,10 @@ class SignalMonitorApp:
             "avg": "持仓均价",
             "qty": "股数",
             "status": "状态",
-            "buy_probability": "即时买入概率*",
-            "reduce_probability": "建议减持概率*",
-            "quality": "信号依据",
-            "action": "实时买卖建议",
+            "buy_probability": "买入操作评分*",
+            "reduce_probability": "减持操作评分*",
+            "quality": "信号/延迟画像",
+            "action": "结构化建议",
             "updated": "最近成交",
         }
         widths = {
@@ -719,6 +751,157 @@ class SignalMonitorApp:
             if self.ui_settings["start_maximized"]:
                 self.root.after_idle(self._maximize_window)
         self.root.update_idletasks()
+
+    def _refresh_portfolio_summary(self) -> None:
+        account_value, _portfolio_value, available = self._probability_account_context()
+        insight = build_portfolio_insight(
+            self.positions,
+            self.levels,
+            account_value=account_value,
+            max_position_pct=float(self.risk_settings["max_position_pct"]),
+            available_funds=available,
+        )
+        hint = insight.rebalance_hints[0] if insight.rebalance_hints else ""
+        self.portfolio_summary_var.set(f"{insight.summary}  |  {hint}")
+
+    def _quote_age_seconds(self, timestamp) -> float | None:
+        if not hasattr(timestamp, "astimezone"):
+            return None
+        try:
+            stamp = timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds()
+        except Exception:
+            return None
+
+    def _enrich_values(self, symbol: str, values: dict) -> dict:
+        benchmark = self.monitor_settings.get("benchmark_symbol", "SPY")
+        symbol_change = values.get("day_change_pct")
+        if symbol_change is None and "momentum_5d_pct" in values:
+            symbol_change = values.get("momentum_5d_pct")
+        benchmark_change = self.benchmark_change_pct
+        if symbol == benchmark and symbol_change is not None:
+            try:
+                self.benchmark_change_pct = float(symbol_change)
+                benchmark_change = self.benchmark_change_pct
+            except (TypeError, ValueError):
+                pass
+        elif benchmark in self.levels and benchmark_change is None:
+            try:
+                benchmark_change = float(self.levels[benchmark].get("day_change_pct") or self.levels[benchmark].get("momentum_5d_pct"))
+                self.benchmark_change_pct = benchmark_change
+            except (TypeError, ValueError):
+                benchmark_change = None
+        return apply_signal_filters(
+            values,
+            self.monitor_settings,
+            symbol_change_pct=float(symbol_change) if isinstance(symbol_change, (int, float)) else None,
+            benchmark_change_pct=benchmark_change,
+        )
+
+    def open_strategy_settings(self) -> None:
+        existing = getattr(self, "strategy_settings_window", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            existing.focus_force()
+            return
+        dialog = tk.Toplevel(self.root)
+        self.strategy_settings_window = dialog
+        dialog.title(f"策略设置 · v{APP_VERSION}")
+        dialog.geometry("560x520")
+        dialog.configure(bg="#18243a")
+        frame = ttk.Frame(dialog, style="Card.TFrame", padding=16)
+        frame.pack(fill="both", expand=True)
+        cfg = dict(self.monitor_settings)
+        vars_map: dict[str, tk.Variable] = {}
+
+        def add_check(key: str, label: str) -> None:
+            var = tk.BooleanVar(value=bool(cfg.get(key)))
+            vars_map[key] = var
+            ttk.Checkbutton(frame, text=label, variable=var).pack(anchor="w", pady=3)
+
+        def add_entry(key: str, label: str) -> None:
+            row = ttk.Frame(frame, style="Card.TFrame")
+            row.pack(fill="x", pady=3)
+            ttk.Label(row, text=label, style="Card.TLabel", width=28).pack(side="left")
+            entry = self._dark_entry(row, 12)
+            entry.pack(side="left")
+            entry.insert(0, str(cfg.get(key)))
+            vars_map[key] = entry
+
+        ttk.Label(frame, text="P0 过滤（默认关闭，不改变老行为）", style="Title.TLabel").pack(anchor="w", pady=(0, 8))
+        add_check("filter_volume_enabled", "买入突破需量比达标")
+        add_entry("filter_volume_min_ratio", "量比下限")
+        add_check("filter_relative_strength_enabled", "买入需强于基准")
+        add_entry("benchmark_symbol", "相对强弱基准")
+        add_check("filter_channel_width_enabled", "限制通道宽度")
+        add_entry("filter_channel_width_min_pct", "通道宽度下限%")
+        add_entry("filter_channel_width_max_pct", "通道宽度上限%")
+        add_check("prefer_pullback_entry", "偏好回踩（延伸>3%降级）")
+        add_check("volatility_adaptive_lookback", "波动率自适应通道窗口")
+        ttk.Label(frame, text="保护线 / 止盈提示", style="Title.TLabel").pack(anchor="w", pady=(12, 8))
+        add_entry("atr_stop_multiplier", "自动保护线 ATR 倍数")
+        add_check("enable_take_profit_hint", "启用规则止盈提示")
+        add_entry("take_profit_atr_multiple", "止盈 ATR 倍数")
+        add_check("show_feed_profile", "显示延迟/数据源画像")
+
+        def save() -> None:
+            updated = dict(self.monitor_settings)
+            for key, var in vars_map.items():
+                if isinstance(var, tk.BooleanVar):
+                    updated[key] = bool(var.get())
+                elif isinstance(var, tk.Entry):
+                    text = var.get().strip()
+                    if key == "benchmark_symbol":
+                        updated[key] = text.upper() or "SPY"
+                    else:
+                        try:
+                            updated[key] = float(text)
+                        except ValueError:
+                            messagebox.showwarning("输入无效", f"{key} 需要数字", parent=dialog)
+                            return
+            write_monitor_settings(MONITOR_SETTINGS_FILE, updated)
+            self.monitor_settings = read_monitor_settings(MONITOR_SETTINGS_FILE)
+            for symbol, values in list(self.levels.items()):
+                self.levels[symbol] = self._enrich_values(symbol, values)
+                self._render_row(symbol, float(self.levels[symbol]["price"]), self.quote_times.get(symbol))
+            self._refresh_portfolio_summary()
+            self._append_log("策略设置已保存并应用到当前列表。")
+            dialog.destroy()
+
+        ttk.Button(frame, text="保存并应用", style="Accent.TButton", command=save).pack(anchor="e", pady=(16, 0))
+
+    def explain_selected_suggestion(self) -> None:
+        selected = self._active_tree().selection()
+        if not selected:
+            messagebox.showinfo("解释建议", "请先选择一只股票。")
+            return
+        symbol = selected[0]
+        suggestion = self.suggestions.get(symbol)
+        if suggestion is None:
+            messagebox.showinfo("解释建议", "尚无结构化建议，请先启动监控。")
+            return
+        use_llm = bool(os.getenv("OPENAI_API_KEY", "").strip())
+        text = explain_suggestion(suggestion, use_llm=use_llm)
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"{symbol} · 建议解释 · v{APP_VERSION}")
+        dialog.geometry("640x480")
+        dialog.configure(bg="#18243a")
+        box = tk.Text(dialog, wrap="word", bg="#1b2940", fg="#f0f5fb", relief="flat", font=("Microsoft YaHei UI", 11))
+        box.pack(fill="both", expand=True, padx=12, pady=12)
+        box.insert("1.0", text)
+        box.configure(state="disabled")
+
+    def show_alert_replay(self) -> None:
+        summary = replay_alerts(signal_core.ALERT_FILE)
+        messagebox.showinfo("告警回放（P3）", summary.as_text())
+
+    def show_event_watch(self) -> None:
+        def worker() -> None:
+            hints = event_watch_hints(self.symbols)
+            self.events.put(("event_watch", hints))
+
+        threading.Thread(target=worker, daemon=True).start()
+        self._append_log("正在查询自选股近期财报/事件窗口…")
 
     def open_ui_settings(self):
         existing = getattr(self, "ui_settings_window", None)
@@ -1767,6 +1950,11 @@ class SignalMonitorApp:
 
         load_dotenv(BASE_DIR / ".env", override=True)
         provider = self.provider_var.get()
+        adaptive = bool(self.monitor_settings.get("volatility_adaptive_lookback"))
+        symbols = self.symbols.copy()
+        benchmark = str(self.monitor_settings.get("benchmark_symbol") or "SPY").upper()
+        if self.monitor_settings.get("filter_relative_strength_enabled") and benchmark not in symbols:
+            symbols.append(benchmark)
 
         if provider == "Alpaca IEX":
             api_key = os.getenv("ALPACA_API_KEY", "").strip()
@@ -1774,16 +1962,18 @@ class SignalMonitorApp:
             if not api_key or not api_secret or api_key.startswith("replace_") or api_secret.startswith("replace_"):
                 messagebox.showerror("缺少密钥", "请点击“配置密钥”填写 Alpaca API Key 和 Secret。")
                 return
-            worker: ProviderWorker = AlpacaWorker(api_key, api_secret, self.symbols.copy(), self.events)
+            worker: ProviderWorker = AlpacaWorker(
+                api_key, api_secret, symbols, self.events, adaptive_lookback=adaptive
+            )
         elif provider in {"Yahoo Finance", TWS_PROVIDER}:
-            worker = YahooWorker(self.symbols.copy(), self.events)
+            worker = YahooWorker(symbols, self.events, adaptive_lookback=adaptive)
         elif provider == "Massive / Polygon":
             api_key = os.getenv("MASSIVE_API_KEY", os.getenv("POLYGON_API_KEY", "")).strip()
             if not api_key or api_key.startswith("replace_"):
                 messagebox.showerror("缺少密钥", "请点击“配置密钥”填写 MASSIVE_API_KEY。")
                 return
             delayed = os.getenv("MASSIVE_DELAYED", "true").strip().lower() not in {"false", "0", "no"}
-            worker = MassiveWorker(api_key, delayed, self.symbols.copy(), self.events)
+            worker = MassiveWorker(api_key, delayed, symbols, self.events, adaptive_lookback=adaptive)
         elif provider == "IBKR Gateway":
             try:
                 host = os.getenv("IBKR_HOST", "127.0.0.1").strip()
@@ -1795,12 +1985,16 @@ class SignalMonitorApp:
             except ValueError:
                 messagebox.showerror("IBKR 配置错误", "请检查端口、Client ID 和行情类型（必须为1、2、3或4）。")
                 return
-            worker = IBKRWorker(host, port, client_id, market_data_type, self.symbols.copy(), self.events)
+            worker = IBKRWorker(
+                host, port, client_id, market_data_type, symbols, self.events, adaptive_lookback=adaptive
+            )
         else:
             messagebox.showerror("数据源错误", f"不支持的数据源：{provider}")
             return
 
         self.levels.clear()
+        self.suggestions.clear()
+        self.benchmark_change_pct = None
         self.quote_times.clear()
         self.history_loaded_day = datetime.now(NEW_YORK).date()
         self.last_market_event_at = time.monotonic()
@@ -1940,6 +2134,9 @@ class SignalMonitorApp:
                     self.market_directory_previous_button.configure(state="normal" if self._current_market_page() > 0 else "disabled")
                     self.market_directory_next_button.configure(state="normal")
                     self._append_log(f"全市场股票读取失败：{event[1]}")
+                elif kind == "event_watch":
+                    for hint in event[1]:
+                        self._append_log(f"事件观察：{hint}")
                 elif kind == "error":
                     self.connection_var.set(event[1])
                     self._append_log(event[1])
@@ -1955,18 +2152,19 @@ class SignalMonitorApp:
         self.root.after(100, self._process_events)
 
     def _apply_snapshot(self, symbol: str, values: dict, timestamp) -> None:
-        self.levels[symbol] = values
+        enriched = self._enrich_values(symbol, values)
+        self.levels[symbol] = enriched
         self.quote_times[symbol] = timestamp
         self.last_market_event_at = time.monotonic()
         self.restart_attempts = 0
-        self._render_row(symbol, float(values["price"]), timestamp)
-        if values["status"] in {"BUY_ALERT", "SELL_ALERT"}:
-            self._trigger_alert(symbol, values)
+        self._render_row(symbol, float(enriched["price"]), timestamp)
+        if enriched["status"] in {"BUY_ALERT", "SELL_ALERT"}:
+            self._trigger_alert(symbol, enriched)
 
     def _apply_trade(self, symbol: str, price: float, timestamp) -> None:
         if symbol not in self.levels:
             return
-        values = self.levels[symbol]
+        values = dict(self.levels[symbol])
         self.quote_times[symbol] = timestamp
         self.last_market_event_at = time.monotonic()
         self.restart_attempts = 0
@@ -1981,6 +2179,8 @@ class SignalMonitorApp:
         else:
             values["status"] = "WATCH"
         values["price"] = price
+        values = self._enrich_values(symbol, values)
+        self.levels[symbol] = values
         self._render_row(symbol, price, timestamp)
 
         status_text, _status_tag = display_status(values, price)
@@ -1994,16 +2194,20 @@ class SignalMonitorApp:
                 self.risk_settings["account_value"],
                 self.risk_settings["risk_pct"],
                 self.risk_settings["max_position_pct"],
+                take_profit_atr_multiple=float(self.monitor_settings.get("take_profit_atr_multiple", 3.0)),
+                enable_take_profit_hint=bool(self.monitor_settings.get("enable_take_profit_hint", True)),
             )
             reason = observation_reason(price, timestamp, values.get("history_date"))
             if reason:
                 plan["action"] = f"仅观察：{reason}"
                 status_text = "仅观察"
+            suggestion = self.suggestions.get(symbol)
+            tier = getattr(suggestion, "alert_tier", "silent") if suggestion else "silent"
             if signal_ready:
                 log_text = (
                     f"行情 {symbol} {self.stock_names.get(symbol, '')} | ${price:,.2f} | "
                     f"{status_text} | 突破买入线 ${float(values['buy_point']):,.2f} | "
-                    f"风控 ${float(plan['position_stop']):,.2f} | {plan['action']}"
+                    f"风控 ${float(plan['position_stop']):,.2f} | {plan['action']} | 告警级 {tier}"
                 )
             else:
                 log_text = (
@@ -2034,16 +2238,21 @@ class SignalMonitorApp:
         reason = observation_reason(price, timestamp, values.get("history_date"))
         if not self.running:
             reason = "监控已停止"
+        atr_mult = float(self.monitor_settings.get("atr_stop_multiplier", 2.0))
         initialized = initialize_risk_baseline(
             position,
             price,
             float(values.get("atr14", 0)),
             reason is None and bool(values.get("signal_ready", True)),
+            atr_multiplier=atr_mult,
         )
         if initialized != position:
             self.positions[symbol] = position = initialized
             write_positions(self.positions)
-            self._append_log(f"{symbol} 自动建立保护线 ${position['initial_stop']:.4f}（参考价 ${price:.4f}，2×ATR）。")
+            self._append_log(
+                f"{symbol} 自动建立保护线 ${position['initial_stop']:.4f}"
+                f"（参考价 ${price:.4f}，{atr_mult:g}×ATR）。"
+            )
         avg_cost = float(position.get("avg_cost", 0))
         quantity = float(position.get("quantity", 0))
         plan = build_position_plan(
@@ -2052,6 +2261,8 @@ class SignalMonitorApp:
             self.risk_settings["account_value"],
             self.risk_settings["risk_pct"],
             self.risk_settings["max_position_pct"],
+            take_profit_atr_multiple=float(self.monitor_settings.get("take_profit_atr_multiple", 3.0)),
+            enable_take_profit_hint=bool(self.monitor_settings.get("enable_take_profit_hint", True)),
         )
         account_value, portfolio_value, available_funds = self._probability_account_context()
         probabilities = estimate_action_probabilities(
@@ -2062,9 +2273,25 @@ class SignalMonitorApp:
             portfolio_value,
             available_funds,
         )
+        quote_age = self._quote_age_seconds(timestamp)
+        provider = self.provider_var.get()
+        profile = feed_profile_label(provider, quote_age) if self.monitor_settings.get("show_feed_profile", True) else provider
+        suggestion = build_suggestion(
+            symbol,
+            values,
+            probabilities,
+            plan,
+            observation=reason,
+            feed_profile=profile,
+            quote_age_seconds=quote_age,
+            provider=provider,
+        )
+        self.suggestions[symbol] = suggestion
         if reason:
             status_text, status_tag = "仅观察", "DATA_SHORT"
             plan["action"] = f"仅观察：{reason}"
+        elif values.get("filter_suppressed"):
+            status_text, status_tag = "过滤降级", "WATCH"
         if hasattr(timestamp, "astimezone"):
             updated = timestamp.astimezone().strftime("%Y-%m-%d %H:%M:%S")
         else:
@@ -2073,14 +2300,18 @@ class SignalMonitorApp:
         buy_text = f"${float(values['buy_point']):,.2f}" if signal_ready else "—"
         stop_text = f"${float(plan['position_stop']):,.2f}" if signal_ready and plan['position_stop'] > 0 else "—"
         if reason or not signal_ready:
-            buy_probability_text = reduce_probability_text = "—"
+            buy_score_text = reduce_score_text = "—"
         else:
-            buy_probability_text = f"{int(probabilities['buy_probability'])}% {probabilities['buy_label']}"
-            reduce_probability_text = f"{int(probabilities['reduce_probability'])}% {probabilities['reduce_label']}"
+            buy_score_text = f"{int(probabilities['buy_probability'])} {probabilities['buy_label']}"
+            reduce_score_text = f"{int(probabilities['reduce_probability'])} {probabilities['reduce_label']}"
+        history_date = values.get("history_date", "—")
         quality_text = (
-            f"{values.get('signal_quality', '价格通道')} · {int(values.get('history_days', 0))}日 · "
-            f"RSI {float(values.get('rsi14', 50)):.0f} · 5日 {float(values.get('momentum_5d_pct', 0)):+.1f}%"
+            f"{values.get('signal_model', values.get('signal_quality', '价格通道'))} · "
+            f"基准日 {history_date} · {profile}"
         )
+        action_text = f"[{suggestion.confidence}/{suggestion.alert_tier}] {suggestion.title}"
+        if suggestion.position_hint:
+            action_text = f"{action_text} · {suggestion.position_hint}"
         row = (
             symbol,
             self.stock_names.get(symbol, "—"),
@@ -2090,10 +2321,10 @@ class SignalMonitorApp:
             f"${avg_cost:,.2f}" if avg_cost > 0 else "—",
             f"{quantity:g}" if quantity > 0 else "—",
             status_text,
-            buy_probability_text,
-            reduce_probability_text,
+            buy_score_text,
+            reduce_score_text,
             quality_text,
-            str(plan["action"]),
+            action_text[:80],
             updated,
         )
         if self.tree.exists(symbol):
@@ -2103,6 +2334,7 @@ class SignalMonitorApp:
                 tags=(directional_row_tag(status_tag, movement_tag),),
             )
         self._refresh_watchlist()
+        self._refresh_portfolio_summary()
         self._sync_selected_price_styles()
 
     def _sync_selected_price_styles(self, _event=None) -> None:
@@ -2138,6 +2370,10 @@ class SignalMonitorApp:
         status = str(values.get("status", ""))
         if status not in {"BUY_ALERT", "SELL_ALERT"}:
             return
+        suggestion = self.suggestions.get(symbol)
+        tier = getattr(suggestion, "alert_tier", "primary") if suggestion else "primary"
+        if tier == "silent":
+            return
         side = "买入" if status == "BUY_ALERT" else "卖出"
         trigger = float(values["buy_point"] if status == "BUY_ALERT" else values["stop_point"])
         if status == "SELL_ALERT":
@@ -2151,16 +2387,22 @@ class SignalMonitorApp:
         alert_key = f"{state_key}:{now.date().isoformat()}"
         if self.alert_state.get(state_key) == alert_key:
             return
+        confidence = getattr(suggestion, "confidence", "medium") if suggestion else "medium"
         message = (
-            f"{side}点提示（只读观察） {symbol} | 现价 ${float(values['price']):.2f} | "
-            f"{side}触发点 ${trigger:.2f} | 通道 ${float(values['stop_point']):.2f} - ${float(values['buy_point']):.2f}"
+            f"[{tier}/{confidence}] {side}点提示（只读观察·非投资建议） {symbol} | "
+            f"现价 ${float(values['price']):.2f} | {side}触发点 ${trigger:.2f} | "
+            f"通道 ${float(values['stop_point']):.2f} - ${float(values['buy_point']):.2f}"
         )
-        self.root.bell()
+        if tier == "primary":
+            self.root.bell()
         self._append_log(message)
-        record_alert(symbol, values, now)
-        self.alert_state[state_key] = alert_key
-        save_state(self.alert_state)
-        threading.Thread(target=self._send_discord_safely, args=(message,), daemon=True).start()
+        if tier == "primary":
+            record_alert(symbol, values, now)
+            self.alert_state[state_key] = alert_key
+            save_state(self.alert_state)
+            threading.Thread(target=self._send_discord_safely, args=(message,), daemon=True).start()
+        else:
+            self._append_log(f"次级提示未写入 Discord/CSV：{symbol}")
 
     def _send_discord_safely(self, message: str) -> None:
         try:

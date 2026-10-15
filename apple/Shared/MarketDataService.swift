@@ -10,7 +10,7 @@ public protocol MarketDataService: Sendable {
 public extension MarketDataService {
     func quoteStream(
         for symbols: [String],
-        pollInterval: Duration = .seconds(15)
+        pollInterval: Duration = .seconds(5)
     ) -> AsyncThrowingStream<[StockQuote], Error> {
         AsyncThrowingStream { continuation in
             let task = Task {

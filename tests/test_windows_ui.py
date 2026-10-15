@@ -75,8 +75,11 @@ class WindowsUITests(unittest.TestCase):
                     with patch.object(gui, "observation_reason", return_value=None):
                         app._render_row("MSFT", 99.0, datetime.now(timezone.utc))
                     score_row = app.tree.item("MSFT", "values")
-                    self.assertIn("%", score_row[8])
-                    self.assertIn("%", score_row[9])
+                    # Operation scores are rule scores, not win-rate percentages.
+                    self.assertRegex(str(score_row[8]), r"^\d+ ")
+                    self.assertRegex(str(score_row[9]), r"^\d+ ")
+                    self.assertNotIn("%", score_row[8])
+                    self.assertNotIn("%", score_row[9])
                     app.levels["MSFT"]["price"] = 100.0
                     with patch.object(gui, "observation_reason", return_value=None):
                         app._render_row("MSFT", 100.0, datetime.now(timezone.utc))

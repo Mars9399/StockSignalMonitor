@@ -59,13 +59,13 @@ struct SignalTableView: View {
                 }
                 .width(105)
 
-                TableColumn("即时买入概率*") { signal in
+                TableColumn("买入操作评分*") { signal in
                     ProbabilityText(score: signal.buyProbability, label: signal.buyProbabilityLabel, isReduction: false)
                         .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
                 .width(105)
 
-                TableColumn("建议减持概率*") { signal in
+                TableColumn("减持操作评分*") { signal in
                     ProbabilityText(score: signal.reduceProbability, label: signal.reduceProbabilityLabel, isReduction: true)
                         .priceMovementBackground(store.priceMovements[signal.symbol])
                 }
@@ -112,7 +112,7 @@ private struct ProbabilityText: View {
 
     var body: some View {
         if let score {
-            Text("\(score)% \(label)")
+            Text("\(score) \(label)")
                 .fontWeight(score >= 55 ? .semibold : .regular)
                 .monospacedDigit()
                 .foregroundStyle(color(for: score))
