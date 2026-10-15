@@ -29,15 +29,15 @@ struct SignalDetailView: View {
                         systemImage: "shield.lefthalf.filled"
                     )
                     MetricCard(
-                        title: "即时买入概率*",
+                        title: "买入操作评分*",
                         value: probabilityText(signal.buyProbability, label: signal.buyProbabilityLabel),
-                        detail: "价格、趋势、动量及当前仓位综合评分",
+                        detail: "价格、趋势、动量及当前仓位综合评分（非胜率）",
                         systemImage: "chart.line.uptrend.xyaxis"
                     )
                     MetricCard(
-                        title: "建议减持概率*",
+                        title: "减持操作评分*",
                         value: probabilityText(signal.reduceProbability, label: signal.reduceProbabilityLabel),
-                        detail: "仅在有持仓时结合风险线与账户暴露评分",
+                        detail: "仅在有持仓时结合风险线与账户暴露评分（非胜率）",
                         systemImage: "chart.line.downtrend.xyaxis"
                     )
                 }
@@ -61,7 +61,7 @@ struct SignalDetailView: View {
                 }
 
                 Label(
-                    "* 概率为规则评分，不是历史胜率或收益保证。本应用只显示行情、信号和仓位参考，不包含任何下单接口。",
+                    "* 操作评分为规则结果，不是历史胜率或收益保证。本应用只显示行情、信号和仓位参考，不包含任何下单接口。",
                     systemImage: "lock.shield"
                 )
                 .font(.callout)
@@ -72,7 +72,7 @@ struct SignalDetailView: View {
     }
 
     private func probabilityText(_ score: Int?, label: String) -> String {
-        score.map { "\($0)% · \(label)" } ?? "—"
+        score.map { "\($0) · \(label)" } ?? "—"
     }
 
     private var header: some View {

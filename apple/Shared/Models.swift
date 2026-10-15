@@ -134,10 +134,17 @@ public struct Position: Codable, Hashable, Sendable {
     }
 
     /// A current-time monitoring baseline, not a reconstruction of entry risk.
-    public mutating func initializeRiskBaseline(price: Double, atr: Double, eligible: Bool) -> Bool {
+    public mutating func initializeRiskBaseline(
+        price: Double,
+        atr: Double,
+        eligible: Bool,
+        atrMultiplier: Double = 2
+    ) -> Bool {
+        let multiple = max(0.5, atrMultiplier)
+        let stop = price - multiple * atr
         guard eligible, initialStop == nil, quantity > 0, averageCost > 0,
-              price.isFinite, atr.isFinite, atr > 0, price - 2 * atr > 0 else { return false }
-        initialStop = price - 2 * atr
+              price.isFinite, atr.isFinite, atr > 0, stop > 0 else { return false }
+        initialStop = stop
         riskReferencePrice = price
         return true
     }
@@ -229,6 +236,8 @@ public struct MonitoredStock: Identifiable, Hashable, Sendable {
     public var levels: SignalLevels?
     public var position: Position
     public var plan: PositionPlan?
+    public var suggestion: TradeSuggestion?
+    public var actionScore: ActionProbabilityScore?
     public var errorMessage: String?
 
     public init(symbol: String, name: String = "", position: Position? = nil) {

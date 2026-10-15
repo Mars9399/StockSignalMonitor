@@ -11,6 +11,7 @@ public final class MonitorStore {
     public private(set) var errorMessage: String?
     public var riskSettings: RiskSettings
     public var configuration: DataProviderConfiguration
+    public var strategySettings: MonitorStrategySettings
 
     @ObservationIgnored private let serviceFactory: MarketDataServiceFactory
     @ObservationIgnored private var service: (any MarketDataService)?
@@ -19,6 +20,7 @@ public final class MonitorStore {
     @ObservationIgnored private var freshnessTask: Task<Void, Never>?
     @ObservationIgnored private var historyDay: String?
     @ObservationIgnored private let positionDefaults: UserDefaults?
+    @ObservationIgnored private var benchmarkChangePercent: Double?
 
     public var symbols: [String] { stocks.map(\.symbol) }
     public var providerKind: MarketDataProviderKind { configuration.kind }
@@ -27,6 +29,7 @@ public final class MonitorStore {
         symbols: [String] = ["AAPL", "MSFT", "NVDA", "SPY", "QQQ"],
         riskSettings: RiskSettings = RiskSettings(),
         configuration: DataProviderConfiguration = .yahoo,
+        strategySettings: MonitorStrategySettings = .default,
         positionDefaults: UserDefaults? = nil,
         serviceFactory: @escaping MarketDataServiceFactory = { configuration in
             try defaultMarketDataService(configuration: configuration)
@@ -38,6 +41,7 @@ public final class MonitorStore {
         }
         self.riskSettings = riskSettings
         self.configuration = configuration
+        self.strategySettings = strategySettings
         self.serviceFactory = serviceFactory
         self.positionDefaults = positionDefaults
         if let data = positionDefaults?.data(forKey: "reliablePositions"),
@@ -130,9 +134,10 @@ public final class MonitorStore {
         }
     }
 
-    public func startMonitoring(interval: Duration = .seconds(15)) {
+    public func startMonitoring(interval: Duration? = nil) {
         guard !isMonitoring else { return }
         isMonitoring = true
+        let poll = interval ?? .seconds(strategySettings.quotePollSeconds)
         freshnessTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
@@ -150,8 +155,13 @@ public final class MonitorStore {
             while !Task.isCancelled {
                 do {
                     let service = try self.resolvedService()
-                    self.connectionMessage = "正在监控 \(self.configuration.kind.displayName) 行情"
-                    for try await quotes in service.quoteStream(for: self.symbols, pollInterval: interval) {
+                    self.connectionMessage = "正在监控 \(self.configuration.kind.displayName) 行情 · 轮询 \(self.strategySettings.quotePollSeconds)s"
+                    var symbols = self.symbols
+                    let benchmark = self.strategySettings.benchmarkSymbol
+                    if self.strategySettings.filterRelativeStrengthEnabled, !symbols.contains(benchmark) {
+                        symbols.append(benchmark)
+                    }
+                    for try await quotes in service.quoteStream(for: symbols, pollInterval: poll) {
                         guard !Task.isCancelled else { break }
                         if self.historyDay != DataReliability.day(.now) { await self.refresh() }
                         for quote in quotes { self.applyLiveQuote(quote) }
@@ -209,21 +219,68 @@ public final class MonitorStore {
     private func apply(quote: StockQuote, history: [DailyBar], at index: Int) {
         stocks[index].quote = quote
         do {
-            var levels = try SignalCalculator.calculate(history: history, livePrice: quote.price)
+            let levels = try SignalCalculator.calculate(history: history, livePrice: quote.price)
             let reason = DataReliability.reason(quote: quote, history: history)
-            if stocks[index].position.initializeRiskBaseline(price: quote.price, atr: levels.atr14, eligible: isMonitoring && reason == nil && levels.isReady),
+            if quote.symbol == strategySettings.benchmarkSymbol {
+                if let previous = history.last?.close, previous > 0 {
+                    benchmarkChangePercent = (quote.price / previous - 1) * 100
+                }
+            }
+            let symbolChange: Double? = history.last.map { bar in
+                bar.close > 0 ? (quote.price / bar.close - 1) * 100 : 0
+            }
+            let filtered = SignalFilterEngine.apply(
+                levels: levels,
+                settings: strategySettings,
+                symbolChangePercent: symbolChange,
+                benchmarkChangePercent: benchmarkChangePercent
+            )
+            var working = filtered.levels
+            if stocks[index].position.initializeRiskBaseline(
+                price: quote.price,
+                atr: working.atr14,
+                eligible: isMonitoring && reason == nil && working.isReady,
+                atrMultiplier: strategySettings.atrStopMultiplier
+            ),
                let data = try? JSONEncoder().encode(stocks.map(\.position)) {
                 positionDefaults?.set(data, forKey: "reliablePositions")
             }
-            if reason != nil { levels.status = .noSignal }
-            stocks[index].levels = levels
-            let plan = PositionPlanner.makePlan(levels: levels, position: stocks[index].position, settings: riskSettings)
-            stocks[index].plan = reason.map { PositionPlan(riskReductionPoint: plan.riskReductionPoint, profitTarget2R: plan.profitTarget2R, profitTarget3R: plan.profitTarget3R, maximumShares: 0, action: .observationOnly($0)) } ?? plan
+            if reason != nil { working.status = .noSignal }
+            stocks[index].levels = working
+            let plan = PositionPlanner.makePlan(levels: working, position: stocks[index].position, settings: riskSettings)
+            let resolvedPlan = reason.map {
+                PositionPlan(
+                    riskReductionPoint: plan.riskReductionPoint,
+                    profitTarget2R: plan.profitTarget2R,
+                    profitTarget3R: plan.profitTarget3R,
+                    maximumShares: 0,
+                    action: .observationOnly($0)
+                )
+            } ?? plan
+            stocks[index].plan = resolvedPlan
+            let score = ActionProbabilityEstimator.estimate(
+                levels: working,
+                position: stocks[index].position,
+                settings: riskSettings
+            )
+            stocks[index].actionScore = score
+            let age = Date.now.timeIntervalSince(quote.timestamp)
+            stocks[index].suggestion = SuggestionBuilder.build(
+                symbol: quote.symbol,
+                filtered: filtered,
+                score: score,
+                plan: resolvedPlan,
+                observation: reason,
+                feedProfile: configuration.kind.displayName + String(format: " · %.0fs", age),
+                quoteAgeSeconds: age
+            )
             stocks[index].errorMessage = nil
         } catch {
             stocks[index].errorMessage = error.localizedDescription
             stocks[index].levels = nil
             stocks[index].plan = nil
+            stocks[index].suggestion = nil
+            stocks[index].actionScore = nil
         }
     }
 
