@@ -30,6 +30,10 @@ public struct HoldingDiagnosisSettings: Codable, Hashable, Sendable {
     public var breakevenATR: Double
     public var maxLeveragePercent: Double
     public var deleverageMinWeightPercent: Double
+    public var watchDays: Int
+    public var watchLineBreachDays: Int
+    public var rsDeteriorationPP: Double
+    public var averageDownTranches: Int
 
     public init(
         accountValue: Double = 100_000,
@@ -50,7 +54,11 @@ public struct HoldingDiagnosisSettings: Codable, Hashable, Sendable {
         maxSectorPercent: Double = 35,
         breakevenATR: Double = 1.5,
         maxLeveragePercent: Double = 100,
-        deleverageMinWeightPercent: Double = 10
+        deleverageMinWeightPercent: Double = 10,
+        watchDays: Int = 10,
+        watchLineBreachDays: Int = 2,
+        rsDeteriorationPP: Double = 5,
+        averageDownTranches: Int = 2
     ) {
         self.accountValue = min(1e12, max(1, accountValue))
         self.riskPercent = min(10, max(0.1, riskPercent))
@@ -71,6 +79,10 @@ public struct HoldingDiagnosisSettings: Codable, Hashable, Sendable {
         self.breakevenATR = min(10, max(0, breakevenATR))
         self.maxLeveragePercent = min(400, max(10, maxLeveragePercent))
         self.deleverageMinWeightPercent = min(100, max(0, deleverageMinWeightPercent))
+        self.watchDays = min(30, max(3, watchDays))
+        self.watchLineBreachDays = min(5, max(1, watchLineBreachDays))
+        self.rsDeteriorationPP = min(20, max(1, rsDeteriorationPP))
+        self.averageDownTranches = min(3, max(1, averageDownTranches))
     }
 
     /// Engine options combined with the account risk and strategy settings already used by the monitor.
@@ -291,8 +303,23 @@ public struct HoldingActionPlan: Codable, Hashable, Sendable, Identifiable {
     public var portfolioBudgetPercent: Double = 0
     public var score: Int = 0
     public var targetSymbol: String = ""
+    public var steps: [HoldingPlanStep] = []
 
     public var id: String { kind.rawValue }
+}
+
+public struct HoldingPlanStep: Codable, Hashable, Sendable {
+    public var side: String
+    public var quantity: Double
+    public var price: Double
+    public var label: String
+
+    public init(side: String, quantity: Double, price: Double, label: String) {
+        self.side = side
+        self.quantity = quantity
+        self.price = price
+        self.label = label
+    }
 }
 
 public struct HoldingAttribution: Codable, Hashable, Sendable {
@@ -349,6 +376,11 @@ public struct HoldingDiagnosis: Codable, Hashable, Sendable {
     public var confidence: String
     public var switchConditions: [HoldingSwitchCondition]
     public var summary: String
+    public var watchLine: Double?
+    public var hardStop: Double?
+    public var watchDays: Int
+    public var nonSellPlan: HoldingPlanKind?
+    public var nonSellSummary: String
     public var disclaimer: String = HoldingDiagnosisText.disclaimer
 
     public func plan(_ kind: HoldingPlanKind) -> HoldingActionPlan? {
@@ -558,77 +590,148 @@ public enum HoldingDiagnosisEngine {
             HoldingActionPlan(kind: kind, name: kind.name(for: mode), allowed: true)
         }
 
+        let midMA = metrics.ma50 ?? metrics.ma20
+        var watchLine: Double? = nil
+        if mode == .loss, let channel, stop < channel, channel < price {
+            watchLine = channel
+        } else if mode == .loss, let midMA, stop < midMA, midMA < price {
+            watchLine = midMA
+        }
+        let watchDays = mode == .loss ? settings.watchDays : 0
+
         var plans: [HoldingPlanKind: HoldingActionPlan] = [:]
         var exit = make(.stopExit)
         exit.action = .sell
-        exit.trigger = "现价附近卖出全部 \(plain(quantity)) 股"
+        exit.trigger = "现价附近卖出全部 \(plain(quantity)) 股；或收盘跌破硬止损 $\(money(stop))"
         exit.price = price
         exit.quantityChange = -quantity
         exit.quantityAfter = 0
         exit.realizedPnL = (price - cost) * quantity
+        exit.steps = [HoldingPlanStep(side: "SELL", quantity: quantity, price: price, label: "现价离场")]
         plans[.stopExit] = finish(exit)
 
         var hold = make(.holdWatch)
-        if mode == .profit {
-            hold.trigger = "保护线上移至 $\(money(stop))，收盘跌破则离场"
+        var holdSteps: [HoldingPlanStep] = []
+        if mode == .loss {
+            let half = quantity >= 2 ? floorShares(quantity / 2) : 0
+            if let watchLine, half >= 1 {
+                holdSteps.append(.init(side: "SELL", quantity: half, price: watchLine, label: "连续\(settings.watchLineBreachDays)日收盘低于观察线则减半"))
+                holdSteps.append(.init(side: "SELL", quantity: quantity - half, price: stop, label: "硬止损"))
+            } else {
+                holdSteps.append(.init(side: "SELL", quantity: quantity, price: stop, label: "硬止损"))
+            }
+            var trigger = ""
+            if let watchLine {
+                let basis = channel == watchLine ? "（10日通道下沿）" : "（中期均线）"
+                trigger = "观察线 $\(money(watchLine))\(basis)，硬止损 $\(money(stop))；观察 \(watchDays) 个交易日；"
+                if half >= 1 { trigger += "连续 \(settings.watchLineBreachDays) 日收盘低于观察线减半，" }
+            } else {
+                trigger = "硬止损 $\(money(stop))；观察 \(watchDays) 个交易日；"
+            }
+            trigger += "触及硬止损或近5日相对强弱再走弱 \(plain(settings.rsDeteriorationPP))pp 全部止损"
+            hold.trigger = trigger
+            hold.price = watchLine ?? stop
         } else {
-            hold.trigger = "持有不动，收盘跌破 $\(money(stop)) 执行止损"
-            if let channel, stop < channel, channel < price { hold.trigger += "；10日通道下沿 $\(money(channel)) 为观察线" }
+            hold.trigger = "保护线上移至 $\(money(stop))，收盘跌破则离场"
+            hold.price = stop
+            holdSteps = [.init(side: "SELL", quantity: quantity, price: stop, label: "上移后保护线")]
         }
-        hold.price = stop
         hold.quantityAfter = quantity
         hold.averageCostAfter = cost
         hold.stopAfter = stop
         hold.worstLoss = holdRisk
+        hold.steps = holdSteps
         plans[.holdWatch] = finish(hold)
 
-        func sizeAdd(_ entry: Double) -> Double {
-            let room = budget - holdRisk
+        func sizeAdd(_ entry: Double, openQty: Double, openRisk: Double, capFraction: Double) -> Double {
+            guard entry > stop else { return 0 }
+            let room = budget - openRisk
             let byRisk = room > 0 ? floorShares(room / (entry - stop)) : 0
-            let headroom = maxValue - quantity * price
+            let headroom = maxValue - openQty * price
             let byValue = headroom > 0 ? floorShares(headroom / entry) : 0
-            return floorShares(min(quantity * settings.averageDownFraction, byRisk, byValue))
+            return floorShares(min(quantity * capFraction, byRisk, byValue))
         }
 
         if mode == .loss {
-            let addPrice = price - settings.addPullbackATR * atr
-            var reason = ""
-            if overLeveraged {
-                reason = leverageReason
-            } else if !dataReady {
-                reason = "历史不足，无法确认趋势"
-            } else if broken {
-                reason = "趋势已破位，禁止摊低"
-            } else if rsStable == nil {
-                reason = "缺少基准/板块数据，无法确认相对强弱"
-            } else if rsStable == false {
-                reason = "近5日相对强弱 \(signed(rs5 ?? 0))pp 未企稳"
-            } else if adds >= settings.maxAverageDownCount {
-                reason = "已补仓 \(adds) 次，达到上限 \(settings.maxAverageDownCount)"
-            } else if deep {
-                reason = "浮亏 \(String(format: "%.1f", pnlPercent))% 超过 \(plain(settings.averageDownMaxLossPercent))%，不再摊低"
-            } else if eventNear {
-                reason = "约 \(earningsDays ?? 0) 天后财报，事件前不补仓"
-            } else if addPrice <= stop {
-                reason = "补仓价不高于保护线"
+            var trancheLevels: [(Double, String)] = []
+            let pullback = price - settings.addPullbackATR * atr
+            var first: Double?
+            var firstLabel = ""
+            if let midMA, stop < midMA, midMA < price {
+                first = midMA
+                firstLabel = metrics.ma50 != nil ? "MA50" : "MA20"
+            } else if pullback > stop {
+                first = pullback
+                firstLabel = "现价−\(plain(settings.addPullbackATR))×ATR"
             }
-            let addQuantity = reason.isEmpty ? sizeAdd(addPrice) : 0
-            if reason.isEmpty, addQuantity < 1 { reason = "风险预算或单股上限剩余不足" }
-            if !reason.isEmpty {
-                plans[.averageDown] = blocked(.averageDown, reason)
-            } else {
-                let newQuantity = quantity + addQuantity
-                var plan = make(.averageDown)
-                plan.action = .buy
-                plan.trigger = "回踩至 $\(money(addPrice)) 附近且收盘不破 $\(money(stop)) 时补 \(plain(addQuantity)) 股（第 \(adds + 1)/\(settings.maxAverageDownCount) 批）"
-                plan.price = addPrice
-                plan.quantityChange = addQuantity
-                plan.quantityAfter = newQuantity
-                plan.averageCostAfter = (cost * quantity + addPrice * addQuantity) / newQuantity
-                plan.stopAfter = stop
-                plan.worstLoss = holdRisk + (addPrice - stop) * addQuantity
-                plans[.averageDown] = finish(plan)
+            if let first {
+                trancheLevels.append((first, firstLabel))
+                if settings.averageDownTranches >= 2 {
+                    let second = first - atr
+                    if second > stop { trancheLevels.append((second, "\(firstLabel)−1×ATR")) }
+                }
             }
+
+            var addReasons: [String] = []
+            if overLeveraged { addReasons.append(leverageReason) }
+            if !dataReady { addReasons.append("历史不足，无法确认趋势") }
+            else if broken { addReasons.append("趋势已破位，禁止摊低") }
+            if rsStable == nil { addReasons.append("缺少基准/板块数据，无法确认相对强弱") }
+            else if rsStable == false { addReasons.append("近5日相对强弱 \(signed(rs5 ?? 0))pp 未企稳") }
+            if adds >= settings.maxAverageDownCount {
+                addReasons.append("已补仓 \(adds) 次，达到上限 \(settings.maxAverageDownCount)")
+            }
+            if deep {
+                addReasons.append("浮亏 \(String(format: "%.1f", pnlPercent))% 超过 \(plain(settings.averageDownMaxLossPercent))%，不再摊低")
+            }
+            if eventNear { addReasons.append("约 \(earningsDays ?? 0) 天后财报，事件前不补仓") }
+            if trancheLevels.isEmpty { addReasons.append("无可用回踩价位（均线/ATR 回踩不高于保护线）") }
+
+            let remainingBatches = max(1, settings.maxAverageDownCount - adds)
+            let nLevels = max(1, min(trancheLevels.count == 0 ? 1 : trancheLevels.count, remainingBatches, settings.averageDownTranches))
+            let trancheCap = settings.averageDownFraction / Double(nLevels)
+            var steps: [HoldingPlanStep] = []
+            var runningQty = quantity
+            var runningCostValue = cost * quantity
+            var runningRisk = holdRisk
+            for (level, label) in trancheLevels.prefix(nLevels) {
+                var qty = sizeAdd(level, openQty: runningQty, openRisk: runningRisk, capFraction: trancheCap)
+                if qty < 1 {
+                    qty = (level > stop && (maxValue - runningQty * price) >= level) ? 1 : 0
+                }
+                guard qty >= 1 else { continue }
+                steps.append(.init(side: "BUY", quantity: qty, price: level, label: "限价第\(steps.count + 1)批·\(label)"))
+                runningRisk += (level - stop) * qty
+                runningCostValue += level * qty
+                runningQty += qty
+            }
+            if !trancheLevels.isEmpty, steps.isEmpty, !addReasons.contains(where: { $0.contains("风险预算") }) {
+                addReasons.append("风险预算或单股上限剩余不足")
+            }
+            let reason = addReasons.joined(separator: "；")
+            let addQty = steps.reduce(0) { $0 + $1.quantity }
+            let addPrice = steps.first?.price ?? trancheLevels.first?.0
+            let newQty = steps.isEmpty ? quantity : runningQty
+            let newAvg = steps.isEmpty ? cost : runningCostValue / newQty
+            let worstAfter = steps.isEmpty ? holdRisk : runningRisk
+            let priceText = trancheLevels.prefix(nLevels).map { "$\(money($0.0))" }.joined(separator: "/")
+            var trigger = "仅在价格回踩 \(priceText.isEmpty ? "—" : priceText) 且收盘不破 $\(money(stop))、近5日相对强弱不再恶化时执行"
+            if !steps.isEmpty {
+                trigger += "（计划 \(steps.count) 批，累计第 \(adds + 1)/\(settings.maxAverageDownCount) 轮）"
+            }
+            var plan = HoldingActionPlan(
+                kind: .averageDown, name: HoldingPlanKind.averageDown.name(for: mode),
+                allowed: reason.isEmpty && !steps.isEmpty, blockedReason: reason, action: .buy
+            )
+            plan.trigger = trigger
+            plan.price = addPrice
+            plan.quantityChange = addQty
+            plan.quantityAfter = newQty
+            plan.averageCostAfter = newAvg
+            plan.stopAfter = stop
+            plan.worstLoss = worstAfter
+            plan.steps = steps
+            plans[.averageDown] = finish(plan)
         } else {
             var reason = ""
             if overLeveraged {
@@ -648,7 +751,7 @@ public enum HoldingDiagnosisEngine {
             } else if eventNear {
                 reason = "约 \(earningsDays ?? 0) 天后财报，事件前不加仓"
             }
-            let addQuantity = reason.isEmpty ? sizeAdd(price) : 0
+            let addQuantity = reason.isEmpty ? sizeAdd(price, openQty: quantity, openRisk: holdRisk, capFraction: settings.averageDownFraction) : 0
             if reason.isEmpty, addQuantity < 1 { reason = "风险预算或单股上限剩余不足" }
             if !reason.isEmpty {
                 plans[.addOnStrength] = blocked(.addOnStrength, reason)
@@ -663,6 +766,7 @@ public enum HoldingDiagnosisEngine {
                 plan.averageCostAfter = (cost * quantity + price * addQuantity) / newQuantity
                 plan.stopAfter = stop
                 plan.worstLoss = holdRisk + (price - stop) * addQuantity
+                plan.steps = [.init(side: "BUY", quantity: addQuantity, price: price, label: "顺势加仓")]
                 plans[.addOnStrength] = finish(plan)
             }
         }
@@ -711,7 +815,7 @@ public enum HoldingDiagnosisEngine {
                 let sell = quantity - keep
                 var plan = make(.rallyReduce)
                 plan.action = .sell
-                plan.trigger = "反弹至 $\(money(rebound))（\(reboundBasis)）附近卖出 \(plain(sell)) 股；未反弹先跌破 $\(money(stop)) 则止损"
+                plan.trigger = "反弹至 $\(money(rebound))（\(reboundBasis)）附近卖出 \(plain(sell)) 股；未反弹先跌破 $\(money(stop)) 则止损（仍属不主动清仓路径）"
                 plan.price = rebound
                 plan.quantityChange = -sell
                 plan.quantityAfter = keep
@@ -719,6 +823,10 @@ public enum HoldingDiagnosisEngine {
                 plan.stopAfter = stop
                 plan.worstLoss = holdRisk
                 plan.realizedPnL = (rebound - cost) * sell
+                plan.steps = [
+                    .init(side: "SELL", quantity: sell, price: rebound, label: "反弹·\(reboundBasis)"),
+                    .init(side: "SELL", quantity: keep, price: stop, label: "余仓硬止损"),
+                ]
                 plans[.rallyReduce] = finish(plan)
             }
         } else {
@@ -855,13 +963,18 @@ public enum HoldingDiagnosisEngine {
             if [.stopExit, .reduceRisk, .rallyReduce, .switchPosition].contains(rec), let ma20 = metrics.ma20 {
                 condition(.holdWatch, "重新站上 MA20 $\(money(ma20)) 且近5日相对强弱 ≥ -\(plain(tolerance))pp")
             }
-            if rec != .averageDown, plans[.averageDown]?.allowed == false, let mid = metrics.ma50 ?? metrics.ma20,
-               adds < settings.maxAverageDownCount, !deep, !overLeveraged {
-                let label = metrics.ma50 != nil ? "MA50" : "MA20"
-                condition(.averageDown, "站上 \(label) $\(money(mid)) 且相对强弱企稳后可重新评估补仓")
+            if rec != .averageDown, let mid = metrics.ma50 ?? metrics.ma20,
+               adds < settings.maxAverageDownCount, !deep {
+                let pull = plans[.averageDown]?.price
+                let pullTxt = pull.map { "回踩 $\(money($0))" } ?? "回踩 \(metrics.ma50 != nil ? "MA50" : "MA20") $\(money(mid))"
+                let gate = overLeveraged ? "且杠杆回到上限内、" : "且"
+                condition(.averageDown, "相对强弱企稳并\(pullTxt)\(gate)收盘不破 $\(money(stop)) 后可评估补仓")
             }
             if rec != .rallyReduce, let rally = plans[.rallyReduce], rally.allowed {
-                condition(.rallyReduce, "反弹至 $\(money(rally.price ?? 0)) 附近")
+                condition(.rallyReduce, "反弹至 $\(money(rally.price ?? 0)) 附近（不主动清仓）")
+            }
+            if let watchLine {
+                condition(.stopExit, "连续 \(settings.watchLineBreachDays) 日收盘低于观察线 $\(money(watchLine)) 后仍走弱，或触及硬止损 $\(money(stop))")
             }
         } else {
             if rec != .scaleOut, plans[.scaleOut]?.allowed == true {
@@ -887,6 +1000,33 @@ public enum HoldingDiagnosisEngine {
         } else {
             sourceLabel = "近20日" + (source != .cost ? "走弱：" + source.label : "未走弱")
         }
+        var nonSellPlan: HoldingPlanKind? = nil
+        var nonSellSummary = ""
+        if mode == .loss {
+            // Use scored `ordered` plans (dictionary copies still have score 0).
+            let nonSellKinds: [HoldingPlanKind] = [.holdWatch, .averageDown, .rallyReduce]
+            var candidates = ordered.filter { nonSellKinds.contains($0.kind) && ($0.allowed || $0.kind == .holdWatch) }
+            var pick = candidates.max { lhs, rhs in
+                if lhs.allowed != rhs.allowed { return !lhs.allowed && rhs.allowed }
+                let ls = lhs.allowed ? lhs.score : -1
+                let rs = rhs.allowed ? rhs.score : -1
+                if ls != rs { return ls < rs }
+                return (HoldingPlanKind.priority.firstIndex(of: lhs.kind) ?? 99) > (HoldingPlanKind.priority.firstIndex(of: rhs.kind) ?? 99)
+            }
+            if [.stopExit, .reduceRisk, .switchPosition].contains(rec) {
+                pick = ordered.first { $0.kind == .holdWatch }
+            }
+            nonSellPlan = pick?.kind
+            if pick?.kind == .holdWatch {
+                let watchTxt = watchLine.map { "观察线 $\(money($0))" } ?? "硬止损"
+                nonSellSummary = "持有观察：守\(watchTxt) / 硬止损 $\(money(stop))，\(watchDays) 个交易日；到止损最坏 $\(money(holdRisk, digits: 0))（预算 \(String(format: "%.0f", budgetRatio * 100))%）"
+            } else if pick?.kind == .averageDown, let avg = pick, let newCost = avg.averageCostAfter {
+                nonSellSummary = "分批补仓：\(avg.trigger)；补后成本 $\(money(newCost))，到保护线最坏 $\(money(avg.worstLoss, digits: 0))"
+            } else if let pick {
+                nonSellSummary = pick.trigger
+            }
+        }
+
         return HoldingDiagnosis(
             symbol: symbol, mode: mode, dataReady: dataReady, price: price, averageCost: cost, quantity: quantity,
             pnlPercent: pnlPercent, pnlAmount: pnlAmount, marketValue: marketValue, weightPercent: weightPercent,
@@ -900,7 +1040,9 @@ public enum HoldingDiagnosisEngine {
             stop: stop, stopBasis: stopBasis, stopHit: stopHit, holdRisk: holdRisk,
             positionBudget: budget, budgetRatio: budgetRatio, overweight: overweight,
             plans: ordered, recommended: rec, confidence: confidence, switchConditions: conditions,
-            summary: "\(recommended.name)（\(confidence)）· \(trend.label) · \(sourceLabel)"
+            summary: "\(recommended.name)（\(confidence)）· \(trend.label) · \(sourceLabel)",
+            watchLine: watchLine, hardStop: stop, watchDays: watchDays,
+            nonSellPlan: nonSellPlan, nonSellSummary: nonSellSummary
         )
     }
 

@@ -31,6 +31,10 @@ DEFAULT_DIAGNOSIS_SETTINGS = {
     "diagnosis_breakeven_atr": 1.5,
     "diagnosis_max_leverage_pct": 100.0,
     "diagnosis_deleverage_min_weight_pct": 10.0,
+    "diagnosis_watch_days": 10.0,
+    "diagnosis_watch_line_breach_days": 2.0,
+    "diagnosis_rs_deterioration_pp": 5.0,
+    "diagnosis_average_down_tranches": 2.0,
 }
 SMALL_RISK_RATIO = 0.5
 MEDIUM_TERM_LEADER_PP = 10.0
@@ -102,6 +106,10 @@ class DiagnosisSettings:
     breakeven_atr: float = 1.5
     max_leverage_pct: float = 100.0
     deleverage_min_weight_pct: float = 10.0
+    watch_days: int = 10
+    watch_line_breach_days: int = 2
+    rs_deterioration_pp: float = 5.0
+    average_down_tranches: int = 2
 
     @classmethod
     def from_configs(cls, risk_settings: dict | None = None, monitor_settings: dict | None = None) -> "DiagnosisSettings":
@@ -138,6 +146,10 @@ class DiagnosisSettings:
             breakeven_atr=num(monitor, "diagnosis_breakeven_atr", 1.5, 0.0, 10.0),
             max_leverage_pct=num(monitor, "diagnosis_max_leverage_pct", 100.0, 10.0, 400.0),
             deleverage_min_weight_pct=num(monitor, "diagnosis_deleverage_min_weight_pct", 10.0, 0.0, 100.0),
+            watch_days=int(num(monitor, "diagnosis_watch_days", 10.0, 3.0, 30.0)),
+            watch_line_breach_days=int(num(monitor, "diagnosis_watch_line_breach_days", 2.0, 1.0, 5.0)),
+            rs_deterioration_pp=num(monitor, "diagnosis_rs_deterioration_pp", 5.0, 1.0, 20.0),
+            average_down_tranches=int(num(monitor, "diagnosis_average_down_tranches", 2.0, 1.0, 3.0)),
         )
 
     @property
@@ -265,6 +277,8 @@ class ActionPlan:
     portfolio_budget_pct: float = 0.0
     score: int = 0
     target_symbol: str = ""
+    # Executable legs: {side, quantity, price, label} — filled even when allowed=False so math is visible.
+    steps: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -313,6 +327,12 @@ class HoldingDiagnosis:
     confidence: str
     switch_conditions: list[dict]
     summary: str
+    watch_line: float | None = None
+    hard_stop: float | None = None
+    watch_days: int = 0
+    # Best non-sell plan among hold_watch / average_down / rally_reduce (loss mode).
+    non_sell_plan: str = ""
+    non_sell_summary: str = ""
     disclaimer: str = DISCLAIMER
 
     def plan(self, plan_id: str) -> ActionPlan | None:
@@ -338,9 +358,14 @@ class HoldingDiagnosis:
             f"相对强弱：5日 {_pp(self.rs5)} · 20日 {_pp(self.rs20)} · 60日 {_pp(self.rs60)} · 板块 {self.sector_label}",
             f"波动：ATR ${self.atr:,.2f}（{self.atr_pct:.1f}%，{self.volatility_label}）"
             + (f" · 财报约 {self.earnings_days} 天后" if self.earnings_days is not None else ""),
-            f"保护线 ${self.stop:,.2f}（{self.stop_basis}）· 持有最坏亏损 ${self.hold_risk:,.2f}"
+            f"硬止损 ${self.stop:,.2f}（{self.stop_basis}）· 持有最坏亏损 ${self.hold_risk:,.2f}"
             f" = 单票预算 {self.budget_ratio * 100:.0f}%",
         ]
+        if self.watch_line is not None:
+            lines.append(
+                f"观察线 ${self.watch_line:,.2f} · 观察 {self.watch_days} 个交易日"
+                + (f" · 若不卖出优先：{self.non_sell_summary}" if self.non_sell_summary else "")
+            )
         if self.leverage_pct is not None:
             lines.append(f"账户杠杆：{self.leverage_pct:.0f}%" + ("（超上限，优先降杠杆）" if self.over_leveraged else ""))
         lines.append("方案对比：")
@@ -352,6 +377,22 @@ class HoldingDiagnosis:
                 )
             else:
                 lines.append(f"  - {plan.name}｜不可用：{plan.blocked_reason}")
+            for step in plan.steps:
+                side = step.get("side", "")
+                qty = step.get("quantity")
+                px = step.get("price")
+                label = step.get("label", "")
+                if px is None:
+                    continue
+                lines.append(
+                    f"      · {side} {qty:g} @ ${float(px):,.2f}"
+                    + (f"（{label}）" if label else "")
+                )
+            if plan.id == "average_down" and plan.avg_cost_after is not None:
+                lines.append(
+                    f"      · 补后股数 {plan.quantity_after:g} · 新成本 ${plan.avg_cost_after:,.2f}"
+                    f" · 到保护线最坏 ${plan.worst_loss:,.2f}"
+                )
         if self.switch_conditions:
             lines.append("切换条件：")
             lines.extend(f"  - {item['condition']} → {item['target_name']}" for item in self.switch_conditions)
@@ -531,65 +572,146 @@ def diagnose_holding(
     def blocked(plan_id: str, reason: str) -> ActionPlan:
         return ActionPlan(id=plan_id, name=names[plan_id], allowed=False, blocked_reason=reason)
 
+    # Watch line (soft) vs hard stop — used by loss-mode hold / average-down playbooks.
+    mid_ma = metrics.ma50 if metrics.ma50 is not None else metrics.ma20
+    watch_line: float | None = None
+    if mode == "loss" and channel is not None and stop < channel < price:
+        watch_line = channel
+    elif mode == "loss" and mid_ma is not None and stop < mid_ma < price:
+        watch_line = mid_ma
+    watch_days = settings.watch_days if mode == "loss" else 0
+
     plans: dict[str, ActionPlan] = {}
     plans["stop_exit"] = finish(ActionPlan(
         id="stop_exit", name=names["stop_exit"], allowed=True, action="sell",
-        trigger=f"现价附近卖出全部 {quantity:g} 股",
+        trigger=f"现价附近卖出全部 {quantity:g} 股；或收盘跌破硬止损 ${stop:,.2f}",
         price=price, quantity_change=-quantity, quantity_after=0.0,
         worst_loss=0.0, realized_pnl=(price - cost) * quantity,
+        steps=[{"side": "SELL", "quantity": quantity, "price": price, "label": "现价离场"}],
     ))
+
+    hold_steps: list[dict] = []
+    if mode == "loss":
+        half = _floor(quantity / 2.0) if quantity >= 2 else 0.0
+        if watch_line is not None and half >= 1:
+            hold_steps.append({
+                "side": "SELL", "quantity": half, "price": watch_line,
+                "label": f"连续{settings.watch_line_breach_days}日收盘低于观察线则减半",
+            })
+            hold_steps.append({
+                "side": "SELL", "quantity": quantity - half, "price": stop, "label": "硬止损",
+            })
+        else:
+            hold_steps.append({
+                "side": "SELL", "quantity": quantity, "price": stop, "label": "硬止损",
+            })
+        hold_trigger = (
+            (f"观察线 ${watch_line:,.2f}" + ("（10日通道下沿）" if channel == watch_line else "（中期均线）")
+             + f"，硬止损 ${stop:,.2f}；观察 {watch_days} 个交易日；"
+             if watch_line is not None else f"硬止损 ${stop:,.2f}；观察 {watch_days} 个交易日；")
+            + (f"连续 {settings.watch_line_breach_days} 日收盘低于观察线减半，" if watch_line is not None and half >= 1 else "")
+            + f"触及硬止损或近5日相对强弱再走弱 {settings.rs_deterioration_pp:g}pp 全部止损"
+        )
+    else:
+        hold_trigger = f"保护线上移至 ${stop:,.2f}，收盘跌破则离场"
+        hold_steps = [{"side": "SELL", "quantity": quantity, "price": stop, "label": "上移后保护线"}]
+
     plans["hold_watch"] = finish(ActionPlan(
         id="hold_watch", name=names["hold_watch"], allowed=True, action="hold",
-        trigger=(f"保护线上移至 ${stop:,.2f}，收盘跌破则离场" if mode == "profit"
-                 else f"持有不动，收盘跌破 ${stop:,.2f} 执行止损"
-                 + (f"；10日通道下沿 ${channel:,.2f} 为观察线" if channel is not None and stop < channel < price else "")),
-        price=stop, quantity_after=quantity, avg_cost_after=cost, stop_after=stop,
-        worst_loss=hold_risk,
+        trigger=hold_trigger,
+        price=stop if mode == "profit" else (watch_line or stop),
+        quantity_after=quantity, avg_cost_after=cost, stop_after=stop,
+        worst_loss=hold_risk, steps=hold_steps,
     ))
 
-    def size_add(entry: float) -> float:
-        room = budget - hold_risk
+    def size_add(entry: float, *, open_qty: float, open_risk: float, cap_fraction: float) -> float:
+        if entry <= stop:
+            return 0.0
+        room = budget - open_risk
         by_risk = _floor(room / (entry - stop)) if room > 0 else 0.0
-        headroom = max_value - quantity * price
+        headroom = max_value - open_qty * price
         by_value = _floor(headroom / entry) if headroom > 0 else 0.0
-        return _floor(min(quantity * settings.average_down_fraction, by_risk, by_value))
+        return _floor(min(quantity * cap_fraction, by_risk, by_value))
 
     if mode == "loss":
-        add_price = price - settings.add_pullback_atr * atr
-        reason = ""
+        # Build tranche prices even when blocked so the user can still read the math.
+        tranche_levels: list[tuple[float, str]] = []
+        pullback = price - settings.add_pullback_atr * atr
+        first = None
+        first_label = ""
+        if mid_ma is not None and stop < mid_ma < price:
+            first, first_label = mid_ma, ("MA50" if metrics.ma50 is not None else "MA20")
+        elif pullback > stop:
+            first, first_label = pullback, f"现价−{settings.add_pullback_atr:g}×ATR"
+        if first is not None:
+            tranche_levels.append((first, first_label))
+            if settings.average_down_tranches >= 2:
+                second = first - atr
+                if second > stop:
+                    tranche_levels.append((second, f"{first_label}−1×ATR"))
+
+        add_reasons: list[str] = []
         if over_leveraged:
-            reason = leverage_reason
-        elif not data_ready:
-            reason = "历史不足，无法确认趋势"
+            add_reasons.append(leverage_reason)
+        if not data_ready:
+            add_reasons.append("历史不足，无法确认趋势")
         elif broken:
-            reason = "趋势已破位，禁止摊低"
-        elif rs_stable is None:
-            reason = "缺少基准/板块数据，无法确认相对强弱"
+            add_reasons.append("趋势已破位，禁止摊低")
+        if rs_stable is None:
+            add_reasons.append("缺少基准/板块数据，无法确认相对强弱")
         elif not rs_stable:
-            reason = f"近5日相对强弱 {rs5:+.2f}pp 未企稳"
-        elif adds >= settings.max_average_down_count:
-            reason = f"已补仓 {adds} 次，达到上限 {settings.max_average_down_count}"
-        elif deep:
-            reason = f"浮亏 {pnl_pct:.1f}% 超过 {settings.average_down_max_loss_pct:g}%，不再摊低"
-        elif event_near:
-            reason = f"约 {earnings_days} 天后财报，事件前不补仓"
-        elif add_price <= stop:
-            reason = "补仓价不高于保护线"
-        add_qty = 0.0 if reason else size_add(add_price)
-        if not reason and add_qty < 1:
-            reason = "风险预算或单股上限剩余不足"
-        if reason:
-            plans["average_down"] = blocked("average_down", reason)
-        else:
-            new_qty = quantity + add_qty
-            plans["average_down"] = finish(ActionPlan(
-                id="average_down", name=names["average_down"], allowed=True, action="buy",
-                trigger=(f"回踩至 ${add_price:,.2f} 附近且收盘不破 ${stop:,.2f} 时补 {add_qty:g} 股"
-                         f"（第 {adds + 1}/{settings.max_average_down_count} 批）"),
-                price=add_price, quantity_change=add_qty, quantity_after=new_qty,
-                avg_cost_after=(cost * quantity + add_price * add_qty) / new_qty, stop_after=stop,
-                worst_loss=hold_risk + (add_price - stop) * add_qty,
-            ))
+            add_reasons.append(f"近5日相对强弱 {rs5:+.2f}pp 未企稳")
+        if adds >= settings.max_average_down_count:
+            add_reasons.append(f"已补仓 {adds} 次，达到上限 {settings.max_average_down_count}")
+        if deep:
+            add_reasons.append(f"浮亏 {pnl_pct:.1f}% 超过 {settings.average_down_max_loss_pct:g}%，不再摊低")
+        if event_near:
+            add_reasons.append(f"约 {earnings_days} 天后财报，事件前不补仓")
+        if not tranche_levels:
+            add_reasons.append("无可用回踩价位（均线/ATR 回踩不高于保护线）")
+
+        # Size as paper math so blocked plans still show price/qty/new cost.
+        remaining_batches = max(1, settings.max_average_down_count - adds)
+        n_levels = max(1, min(len(tranche_levels) or 1, remaining_batches, settings.average_down_tranches))
+        tranche_cap = settings.average_down_fraction / n_levels
+        steps: list[dict] = []
+        running_qty = quantity
+        running_cost_value = cost * quantity
+        running_risk = hold_risk
+        for index, (level, label) in enumerate(tranche_levels[:n_levels]):
+            qty = size_add(level, open_qty=running_qty, open_risk=running_risk, cap_fraction=tranche_cap)
+            if qty < 1:
+                # Fall back to a 1-share illustration when budget is tight but levels exist.
+                qty = 1.0 if level > stop and (max_value - running_qty * price) >= level else 0.0
+            if qty < 1:
+                continue
+            steps.append({
+                "side": "BUY", "quantity": qty, "price": level,
+                "label": f"限价第{len(steps) + 1}批·{label}",
+            })
+            running_risk += (level - stop) * qty
+            running_cost_value += level * qty
+            running_qty += qty
+
+        if tranche_levels and not steps and "风险预算或单股上限剩余不足" not in add_reasons:
+            add_reasons.append("风险预算或单股上限剩余不足")
+        reason = "；".join(add_reasons)
+        add_qty = sum(step["quantity"] for step in steps)
+        add_price = steps[0]["price"] if steps else (tranche_levels[0][0] if tranche_levels else None)
+        new_qty = running_qty if steps else quantity
+        new_avg = (running_cost_value / new_qty) if steps else cost
+        worst_after = running_risk if steps else hold_risk
+        price_text = "/".join(f"${level:,.2f}" for level, _ in tranche_levels[:n_levels]) if tranche_levels else "—"
+        trigger = (
+            f"仅在价格回踩 {price_text} 且收盘不破 ${stop:,.2f}、近5日相对强弱不再恶化时执行"
+            + (f"（计划 {len(steps)} 批，累计第 {adds + 1}/{settings.max_average_down_count} 轮）" if steps else "")
+        )
+        plans["average_down"] = finish(ActionPlan(
+            id="average_down", name=names["average_down"], allowed=not bool(reason) and bool(steps),
+            blocked_reason=reason, action="buy", trigger=trigger,
+            price=add_price, quantity_change=add_qty, quantity_after=new_qty,
+            avg_cost_after=new_avg, stop_after=stop, worst_loss=worst_after, steps=steps,
+        ))
     else:
         reason = ""
         if over_leveraged:
@@ -608,7 +730,9 @@ def diagnose_holding(
             reason = "偏离 MA20 超过 2×ATR，追高风险"
         elif event_near:
             reason = f"约 {earnings_days} 天后财报，事件前不加仓"
-        add_qty = 0.0 if reason else size_add(price)
+        add_qty = 0.0 if reason else size_add(
+            price, open_qty=quantity, open_risk=hold_risk, cap_fraction=settings.average_down_fraction
+        )
         if not reason and add_qty < 1:
             reason = "风险预算或单股上限剩余不足"
         if reason:
@@ -621,6 +745,7 @@ def diagnose_holding(
                 price=price, quantity_change=add_qty, quantity_after=new_qty,
                 avg_cost_after=(cost * quantity + price * add_qty) / new_qty, stop_after=stop,
                 worst_loss=hold_risk + (price - stop) * add_qty,
+                steps=[{"side": "BUY", "quantity": add_qty, "price": price, "label": "顺势加仓"}],
             ))
 
     if quantity < 2:
@@ -656,9 +781,13 @@ def diagnose_holding(
             plans["rally_reduce"] = finish(ActionPlan(
                 id="rally_reduce", name=names["rally_reduce"], allowed=True, action="sell",
                 trigger=(f"反弹至 ${rebound:,.2f}（{rebound_basis}）附近卖出 {sell:g} 股；"
-                         f"未反弹先跌破 ${stop:,.2f} 则止损"),
+                         f"未反弹先跌破 ${stop:,.2f} 则止损（仍属不主动清仓路径）"),
                 price=rebound, quantity_change=-sell, quantity_after=keep, avg_cost_after=cost,
                 stop_after=stop, worst_loss=hold_risk, realized_pnl=(rebound - cost) * sell,
+                steps=[
+                    {"side": "SELL", "quantity": sell, "price": rebound, "label": f"反弹·{rebound_basis}"},
+                    {"side": "SELL", "quantity": keep, "price": stop, "label": "余仓硬止损"},
+                ],
             ))
     else:
         take_profit = cost + settings.take_profit_atr_multiple * atr
@@ -783,12 +912,17 @@ def diagnose_holding(
         if rec in ("stop_exit", "reduce_risk", "rally_reduce", "switch") and metrics.ma20 is not None:
             condition("hold_watch", f"重新站上 MA20 ${metrics.ma20:,.2f} 且近5日相对强弱 ≥ -{tolerance:g}pp")
         mid = metrics.ma50 if metrics.ma50 is not None else metrics.ma20
-        if (rec != "average_down" and not plans["average_down"].allowed and mid is not None
-                and adds < settings.max_average_down_count and not deep and not over_leveraged):
+        avg_plan = plans["average_down"]
+        if rec != "average_down" and mid is not None and adds < settings.max_average_down_count and not deep:
             label = "MA50" if metrics.ma50 is not None else "MA20"
-            condition("average_down", f"站上 {label} ${mid:,.2f} 且相对强弱企稳后可重新评估补仓")
+            pull = avg_plan.price
+            pull_txt = f"回踩 ${pull:,.2f}" if pull is not None else f"回踩 {label} ${mid:,.2f}"
+            gate = "且杠杆回到上限内、" if over_leveraged else "且"
+            condition("average_down", f"相对强弱企稳并{pull_txt}{gate}收盘不破 ${stop:,.2f} 后可评估补仓")
         if rec != "rally_reduce" and plans["rally_reduce"].allowed:
-            condition("rally_reduce", f"反弹至 ${plans['rally_reduce'].price:,.2f} 附近")
+            condition("rally_reduce", f"反弹至 ${plans['rally_reduce'].price:,.2f} 附近（不主动清仓）")
+        if watch_line is not None:
+            condition("stop_exit", f"连续 {settings.watch_line_breach_days} 日收盘低于观察线 ${watch_line:,.2f} 后仍走弱，或触及硬止损 ${stop:,.2f}")
     else:
         if rec != "scale_out" and plans["scale_out"].allowed:
             condition("scale_out", f"价格达到止盈参考 ${cost + settings.take_profit_atr_multiple * atr:,.2f} 或 RSI ≥ 70")
@@ -808,6 +942,39 @@ def diagnose_holding(
         "近20日" + ("走弱：" + SOURCE_LABELS[source] if source != "cost" else "未走弱")
     )
     summary = f"{recommended.name}（{confidence}）· {TREND_LABELS[trend]} · {source_label}"
+
+    non_sell_id = ""
+    non_sell_summary = ""
+    if mode == "loss":
+        # Prefer an allowed non-sell plan; fall back to hold_watch (always allowed) with its playbook.
+        candidates = [
+            plans[pid] for pid in ("hold_watch", "average_down", "rally_reduce")
+            if pid in plans and (plans[pid].allowed or pid == "hold_watch")
+        ]
+        if candidates:
+            pick = max(
+                candidates,
+                key=lambda item: (item.allowed, item.score if item.allowed else -1, -PLAN_PRIORITY.index(item.id)),
+            )
+            # If the engine recommends selling, surface hold_watch as the explicit "若不卖出" path.
+            if rec in ("stop_exit", "reduce_risk", "switch"):
+                pick = plans["hold_watch"]
+            non_sell_id = pick.id
+            if pick.id == "hold_watch":
+                non_sell_summary = (
+                    f"持有观察：守{'观察线 $' + f'{watch_line:,.2f}' if watch_line is not None else '硬止损'}"
+                    f" / 硬止损 ${stop:,.2f}，{watch_days} 个交易日；到止损最坏 ${hold_risk:,.0f}"
+                    f"（预算 {budget_ratio * 100:.0f}%）"
+                )
+            elif pick.id == "average_down":
+                non_sell_summary = (
+                    f"分批补仓：{pick.trigger}；补后成本 ${pick.avg_cost_after:,.2f}，"
+                    f"到保护线最坏 ${pick.worst_loss:,.0f}"
+                    if pick.avg_cost_after is not None else pick.trigger
+                )
+            else:
+                non_sell_summary = pick.trigger
+
     return HoldingDiagnosis(
         symbol=symbol, mode=mode, data_ready=data_ready, price=price, avg_cost=cost, quantity=quantity,
         pnl_pct=pnl_pct, pnl_amount=pnl_amount, market_value=market_value, weight_pct=weight_pct,
@@ -822,6 +989,8 @@ def diagnose_holding(
         position_budget=budget, budget_ratio=budget_ratio, overweight=overweight,
         plans=ordered, recommended=rec, confidence=confidence, switch_conditions=conditions,
         summary=summary,
+        watch_line=watch_line, hard_stop=stop, watch_days=watch_days,
+        non_sell_plan=non_sell_id, non_sell_summary=non_sell_summary,
     )
 
 

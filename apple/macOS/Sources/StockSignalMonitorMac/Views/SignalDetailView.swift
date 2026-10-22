@@ -158,8 +158,16 @@ private struct HoldingDiagnosisCard: View {
                 Text(diagnosis.summary)
                     .font(.headline)
                 Text("推荐：\(diagnosis.recommendedPlan?.name ?? diagnosis.recommended.name(for: diagnosis.mode)) · 置信度 \(diagnosis.confidence)")
-                Text("趋势 \(diagnosis.trendState.label) · \(diagnosis.lossSourceLabel) · 保护线 $\(String(format: "%.2f", diagnosis.stop))（\(diagnosis.stopBasis)）")
+                Text("趋势 \(diagnosis.trendState.label) · \(diagnosis.lossSourceLabel) · 硬止损 $\(String(format: "%.2f", diagnosis.stop))（\(diagnosis.stopBasis)）")
                     .foregroundStyle(.secondary)
+                if let watch = diagnosis.watchLine {
+                    Text("观察线 $\(String(format: "%.2f", watch)) · 观察 \(diagnosis.watchDays) 个交易日")
+                        .foregroundStyle(.secondary)
+                }
+                if !diagnosis.nonSellSummary.isEmpty {
+                    Text("若不卖出：\(diagnosis.nonSellSummary)")
+                        .font(.callout)
+                }
                 if diagnosis.overLeveraged, let leverage = diagnosis.leveragePercent {
                     Text("账户杠杆 \(String(format: "%.0f", leverage))% 超上限，优先降杠杆，禁止补仓/加仓/建仓")
                         .foregroundStyle(.orange)
@@ -174,13 +182,21 @@ private struct HoldingDiagnosisCard: View {
                                     Text(plan.allowed ? "评分 \(plan.score)" : "不可用")
                                         .foregroundStyle(.secondary)
                                 }
-                                if plan.allowed {
-                                    Text(plan.trigger).font(.caption)
+                                Text(plan.allowed ? plan.trigger : plan.blockedReason)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                ForEach(Array(plan.steps.enumerated()), id: \.offset) { _, step in
+                                    Text("· \(step.side) \(String(format: "%g", step.quantity)) @ $\(String(format: "%.2f", step.price))（\(step.label)）")
+                                        .font(.caption2)
+                                }
+                                if plan.kind == .averageDown, let avg = plan.averageCostAfter {
+                                    Text("补后成本 $\(String(format: "%.2f", avg)) · 到保护线最坏 $\(String(format: "%.0f", plan.worstLoss))")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                } else if plan.allowed {
                                     Text("最坏亏损 $\(String(format: "%.0f", plan.worstLoss)) · 预算 \(String(format: "%.0f", plan.budgetPercent))%")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
-                                } else {
-                                    Text(plan.blockedReason).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                             .padding(.vertical, 2)

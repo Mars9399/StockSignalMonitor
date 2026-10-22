@@ -101,7 +101,17 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 80 股；或收盘跌破硬止损 $78.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 80.0,
+        "price": 84.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "hold_watch": {
       "allowed": true,
@@ -111,17 +121,43 @@
       "quantity_after": 80.0,
       "avg_cost_after": 100.0,
       "worst_loss": 480.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "硬止损 $78.00；观察 10 个交易日；触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 80.0,
+        "price": 78.0,
+        "label": "硬止损"
+       }
+      ]
      },
      "average_down": {
       "allowed": false,
       "score": 0,
-      "price": null,
-      "quantity_change": 0.0,
-      "quantity_after": 0.0,
-      "avg_cost_after": null,
-      "worst_loss": 0.0,
-      "target_symbol": ""
+      "price": 82.5,
+      "quantity_change": 40.0,
+      "quantity_after": 120.0,
+      "avg_cost_after": 93.66666666666667,
+      "worst_loss": 600.0,
+      "target_symbol": "",
+      "trigger": "仅在价格回踩 $82.50/$79.50 且收盘不破 $78.00、近5日相对强弱不再恶化时执行（计划 2 批，累计第 1/2 轮）",
+      "blocked_reason": "趋势已破位，禁止摊低；近5日相对强弱 -7.17pp 未企稳；浮亏 -16.0% 超过 15%，不再摊低",
+      "steps": [
+       {
+        "side": "BUY",
+        "quantity": 20.0,
+        "price": 82.5,
+        "label": "限价第1批·现价−0.5×ATR"
+       },
+       {
+        "side": "BUY",
+        "quantity": 20.0,
+        "price": 79.5,
+        "label": "限价第2批·现价−0.5×ATR−1×ATR"
+       }
+      ]
      },
      "reduce_risk": {
       "allowed": true,
@@ -131,7 +167,10 @@
       "quantity_after": 40.0,
       "avg_cost_after": 100.0,
       "worst_loss": 240.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 40 股，保留 40 股，保护线 $78.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "rally_reduce": {
       "allowed": true,
@@ -141,7 +180,23 @@
       "quantity_after": 40.0,
       "avg_cost_after": 100.0,
       "worst_loss": 480.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "反弹至 $87.00（现价+1×ATR）附近卖出 40 股；未反弹先跌破 $78.00 则止损（仍属不主动清仓路径）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 40.0,
+        "price": 87.0,
+        "label": "反弹·现价+1×ATR"
+       },
+       {
+        "side": "SELL",
+        "quantity": 40.0,
+        "price": 78.0,
+        "label": "余仓硬止损"
+       }
+      ]
      },
      "switch": {
       "allowed": true,
@@ -151,7 +206,10 @@
       "quantity_after": 16.0,
       "avg_cost_after": 420.0,
       "worst_loss": 192.0,
-      "target_symbol": "MSFT"
+      "target_symbol": "MSFT",
+      "trigger": "卖出 80 股 AMD，换入约 16 股 MSFT（同板块近20日强 +19.3pp）",
+      "blocked_reason": "",
+      "steps": []
      }
     },
     "switch_targets": [
@@ -160,7 +218,12 @@
      "reduce_risk"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": null,
+    "hard_stop": 78.0,
+    "watch_days": 10,
+    "non_sell_plan": "hold_watch",
+    "non_sell_summary": "持有观察：守硬止损 / 硬止损 $78.00，10 个交易日；到止损最坏 $480（预算 48%）"
    }
   },
   {
@@ -240,27 +303,63 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 20 股；或收盘跌破硬止损 $375.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 20.0,
+        "price": 390.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "hold_watch": {
       "allowed": true,
       "score": 85,
-      "price": 375.0,
+      "price": 380.0,
       "quantity_change": 0.0,
       "quantity_after": 20.0,
       "avg_cost_after": 400.0,
       "worst_loss": 300.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "观察线 $380.00（中期均线），硬止损 $375.00；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 380.0,
+        "label": "连续2日收盘低于观察线则减半"
+       },
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 375.0,
+        "label": "硬止损"
+       }
+      ]
      },
      "average_down": {
       "allowed": true,
       "score": 60,
-      "price": 387.0,
+      "price": 380.0,
       "quantity_change": 5.0,
       "quantity_after": 25.0,
-      "avg_cost_after": 397.4,
-      "worst_loss": 360.0,
-      "target_symbol": ""
+      "avg_cost_after": 396.0,
+      "worst_loss": 325.0,
+      "target_symbol": "",
+      "trigger": "仅在价格回踩 $380.00 且收盘不破 $375.00、近5日相对强弱不再恶化时执行（计划 1 批，累计第 1/2 轮）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "BUY",
+        "quantity": 5.0,
+        "price": 380.0,
+        "label": "限价第1批·MA50"
+       }
+      ]
      },
      "reduce_risk": {
       "allowed": true,
@@ -270,7 +369,10 @@
       "quantity_after": 10.0,
       "avg_cost_after": 400.0,
       "worst_loss": 150.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 10 股，保留 10 股，保护线 $375.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "rally_reduce": {
       "allowed": true,
@@ -280,7 +382,23 @@
       "quantity_after": 10.0,
       "avg_cost_after": 400.0,
       "worst_loss": 300.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "反弹至 $396.00（现价+1×ATR）附近卖出 10 股；未反弹先跌破 $375.00 则止损（仍属不主动清仓路径）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 396.0,
+        "label": "反弹·现价+1×ATR"
+       },
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 375.0,
+        "label": "余仓硬止损"
+       }
+      ]
      },
      "switch": {
       "allowed": false,
@@ -290,16 +408,26 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+      "steps": []
      }
     },
     "switch_targets": [
      "stop_exit",
+     "average_down",
      "rally_reduce",
+     "stop_exit",
      "reduce_risk"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": 380.0,
+    "hard_stop": 375.0,
+    "watch_days": 10,
+    "non_sell_plan": "hold_watch",
+    "non_sell_summary": "持有观察：守观察线 $380.00 / 硬止损 $375.00，10 个交易日；到止损最坏 $300（预算 30%）"
    }
   },
   {
@@ -379,7 +507,17 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 40 股；或收盘跌破硬止损 $190.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 40.0,
+        "price": 196.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "hold_watch": {
       "allowed": true,
@@ -389,7 +527,17 @@
       "quantity_after": 40.0,
       "avg_cost_after": 200.0,
       "worst_loss": 240.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "硬止损 $190.00；观察 10 个交易日；触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 40.0,
+        "price": 190.0,
+        "label": "硬止损"
+       }
+      ]
      },
      "average_down": {
       "allowed": true,
@@ -397,9 +545,25 @@
       "price": 194.25,
       "quantity_change": 11.0,
       "quantity_after": 51.0,
-      "avg_cost_after": 198.75980392156862,
-      "worst_loss": 286.75,
-      "target_symbol": ""
+      "avg_cost_after": 198.69117647058823,
+      "worst_loss": 283.25,
+      "target_symbol": "",
+      "trigger": "仅在价格回踩 $194.25/$190.75 且收盘不破 $190.00、近5日相对强弱不再恶化时执行（计划 2 批，累计第 1/2 轮）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "BUY",
+        "quantity": 10.0,
+        "price": 194.25,
+        "label": "限价第1批·现价−0.5×ATR"
+       },
+       {
+        "side": "BUY",
+        "quantity": 1.0,
+        "price": 190.75,
+        "label": "限价第2批·现价−0.5×ATR−1×ATR"
+       }
+      ]
      },
      "reduce_risk": {
       "allowed": true,
@@ -409,7 +573,10 @@
       "quantity_after": 20.0,
       "avg_cost_after": 200.0,
       "worst_loss": 120.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 20 股，保留 20 股，保护线 $190.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "rally_reduce": {
       "allowed": true,
@@ -419,7 +586,23 @@
       "quantity_after": 20.0,
       "avg_cost_after": 200.0,
       "worst_loss": 240.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "反弹至 $199.50（现价+1×ATR）附近卖出 20 股；未反弹先跌破 $190.00 则止损（仍属不主动清仓路径）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 20.0,
+        "price": 199.5,
+        "label": "反弹·现价+1×ATR"
+       },
+       {
+        "side": "SELL",
+        "quantity": 20.0,
+        "price": 190.0,
+        "label": "余仓硬止损"
+       }
+      ]
      },
      "switch": {
       "allowed": false,
@@ -429,16 +612,25 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+      "steps": []
      }
     },
     "switch_targets": [
      "stop_exit",
+     "average_down",
      "rally_reduce",
      "reduce_risk"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": null,
+    "hard_stop": 190.0,
+    "watch_days": 10,
+    "non_sell_plan": "hold_watch",
+    "non_sell_summary": "持有观察：守硬止损 / 硬止损 $190.00，10 个交易日；到止损最坏 $240（预算 24%）"
    }
   },
   {
@@ -518,7 +710,17 @@
       "quantity_after": 15.0,
       "avg_cost_after": 500.0,
       "worst_loss": 450.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "保护线上移至 $670.00，收盘跌破则离场",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 15.0,
+        "price": 670.0,
+        "label": "上移后保护线"
+       }
+      ]
      },
      "add_on_strength": {
       "allowed": false,
@@ -528,7 +730,10 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "RSI 76 超买",
+      "steps": []
      },
      "scale_out": {
       "allowed": true,
@@ -538,7 +743,10 @@
       "quantity_after": 10.0,
       "avg_cost_after": 500.0,
       "worst_loss": 300.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "已达止盈参考 $545.00，现价附近卖出 5 股",
+      "blocked_reason": "",
+      "steps": []
      },
      "reduce_risk": {
       "allowed": true,
@@ -548,7 +756,10 @@
       "quantity_after": 7.0,
       "avg_cost_after": 500.0,
       "worst_loss": 210.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 8 股，保留 7 股，保护线 $670.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "stop_exit": {
       "allowed": true,
@@ -558,7 +769,17 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 15 股；或收盘跌破硬止损 $670.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 15.0,
+        "price": 700.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "switch": {
       "allowed": false,
@@ -568,7 +789,10 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+      "steps": []
      }
     },
     "switch_targets": [
@@ -576,7 +800,12 @@
      "add_on_strength"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": null,
+    "hard_stop": 670.0,
+    "watch_days": 0,
+    "non_sell_plan": "",
+    "non_sell_summary": ""
    }
   },
   {
@@ -656,27 +885,56 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 60 股；或收盘跌破硬止损 $250.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 60.0,
+        "price": 270.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "hold_watch": {
       "allowed": true,
       "score": 5,
-      "price": 250.0,
+      "price": 265.0,
       "quantity_change": 0.0,
       "quantity_after": 60.0,
       "avg_cost_after": 300.0,
       "worst_loss": 1200.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "观察线 $265.00（中期均线），硬止损 $250.00；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 30.0,
+        "price": 265.0,
+        "label": "连续2日收盘低于观察线则减半"
+       },
+       {
+        "side": "SELL",
+        "quantity": 30.0,
+        "price": 250.0,
+        "label": "硬止损"
+       }
+      ]
      },
      "average_down": {
       "allowed": false,
       "score": 0,
-      "price": null,
-      "quantity_change": 0.0,
-      "quantity_after": 0.0,
-      "avg_cost_after": null,
-      "worst_loss": 0.0,
-      "target_symbol": ""
+      "price": 265.0,
+      "quantity_change": 0,
+      "quantity_after": 60.0,
+      "avg_cost_after": 300.0,
+      "worst_loss": 1200.0,
+      "target_symbol": "",
+      "trigger": "仅在价格回踩 $265.00/$256.00 且收盘不破 $250.00、近5日相对强弱不再恶化时执行",
+      "blocked_reason": "风险预算或单股上限剩余不足",
+      "steps": []
      },
      "reduce_risk": {
       "allowed": true,
@@ -686,7 +944,10 @@
       "quantity_after": 30.0,
       "avg_cost_after": 300.0,
       "worst_loss": 600.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 30 股，保留 30 股，保护线 $250.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "rally_reduce": {
       "allowed": true,
@@ -696,7 +957,23 @@
       "quantity_after": 30.0,
       "avg_cost_after": 300.0,
       "worst_loss": 1200.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "反弹至 $280.00（MA20）附近卖出 30 股；未反弹先跌破 $250.00 则止损（仍属不主动清仓路径）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 30.0,
+        "price": 280.0,
+        "label": "反弹·MA20"
+       },
+       {
+        "side": "SELL",
+        "quantity": 30.0,
+        "price": 250.0,
+        "label": "余仓硬止损"
+       }
+      ]
      },
      "switch": {
       "allowed": false,
@@ -706,17 +983,26 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+      "steps": []
      }
     },
     "switch_targets": [
      "stop_exit",
      "hold_watch",
      "average_down",
-     "rally_reduce"
+     "rally_reduce",
+     "stop_exit"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": 265.0,
+    "hard_stop": 250.0,
+    "watch_days": 10,
+    "non_sell_plan": "hold_watch",
+    "non_sell_summary": "持有观察：守观察线 $265.00 / 硬止损 $250.00，10 个交易日；到止损最坏 $1,200（预算 120%）"
    }
   },
   {
@@ -797,27 +1083,63 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 20 股；或收盘跌破硬止损 $375.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 20.0,
+        "price": 390.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "hold_watch": {
       "allowed": true,
       "score": 75,
-      "price": 375.0,
+      "price": 380.0,
       "quantity_change": 0.0,
       "quantity_after": 20.0,
       "avg_cost_after": 400.0,
       "worst_loss": 300.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "观察线 $380.00（中期均线），硬止损 $375.00；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 380.0,
+        "label": "连续2日收盘低于观察线则减半"
+       },
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 375.0,
+        "label": "硬止损"
+       }
+      ]
      },
      "average_down": {
       "allowed": false,
       "score": 0,
-      "price": null,
-      "quantity_change": 0.0,
-      "quantity_after": 0.0,
-      "avg_cost_after": null,
-      "worst_loss": 0.0,
-      "target_symbol": ""
+      "price": 380.0,
+      "quantity_change": 5.0,
+      "quantity_after": 25.0,
+      "avg_cost_after": 396.0,
+      "worst_loss": 325.0,
+      "target_symbol": "",
+      "trigger": "仅在价格回踩 $380.00 且收盘不破 $375.00、近5日相对强弱不再恶化时执行（计划 1 批，累计第 1/2 轮）",
+      "blocked_reason": "约 3 天后财报，事件前不补仓",
+      "steps": [
+       {
+        "side": "BUY",
+        "quantity": 5.0,
+        "price": 380.0,
+        "label": "限价第1批·MA50"
+       }
+      ]
      },
      "reduce_risk": {
       "allowed": true,
@@ -827,7 +1149,10 @@
       "quantity_after": 10.0,
       "avg_cost_after": 400.0,
       "worst_loss": 150.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 10 股，保留 10 股，保护线 $375.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "rally_reduce": {
       "allowed": true,
@@ -837,7 +1162,23 @@
       "quantity_after": 10.0,
       "avg_cost_after": 400.0,
       "worst_loss": 300.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "反弹至 $396.00（现价+1×ATR）附近卖出 10 股；未反弹先跌破 $375.00 则止损（仍属不主动清仓路径）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 396.0,
+        "label": "反弹·现价+1×ATR"
+       },
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 375.0,
+        "label": "余仓硬止损"
+       }
+      ]
      },
      "switch": {
       "allowed": false,
@@ -847,18 +1188,27 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+      "steps": []
      }
     },
     "switch_targets": [
      "stop_exit",
      "average_down",
      "rally_reduce",
+     "stop_exit",
      "reduce_risk",
      "hold_watch"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": 380.0,
+    "hard_stop": 375.0,
+    "watch_days": 10,
+    "non_sell_plan": "hold_watch",
+    "non_sell_summary": "持有观察：守观察线 $380.00 / 硬止损 $375.00，10 个交易日；到止损最坏 $300（预算 30%）"
    }
   },
   {
@@ -939,27 +1289,63 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 20 股；或收盘跌破硬止损 $375.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 20.0,
+        "price": 390.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "hold_watch": {
       "allowed": true,
       "score": 85,
-      "price": 375.0,
+      "price": 380.0,
       "quantity_change": 0.0,
       "quantity_after": 20.0,
       "avg_cost_after": 400.0,
       "worst_loss": 300.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "观察线 $380.00（中期均线），硬止损 $375.00；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 380.0,
+        "label": "连续2日收盘低于观察线则减半"
+       },
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 375.0,
+        "label": "硬止损"
+       }
+      ]
      },
      "average_down": {
       "allowed": false,
       "score": 0,
-      "price": null,
-      "quantity_change": 0.0,
-      "quantity_after": 0.0,
-      "avg_cost_after": null,
-      "worst_loss": 0.0,
-      "target_symbol": ""
+      "price": 380.0,
+      "quantity_change": 5.0,
+      "quantity_after": 25.0,
+      "avg_cost_after": 396.0,
+      "worst_loss": 325.0,
+      "target_symbol": "",
+      "trigger": "仅在价格回踩 $380.00 且收盘不破 $375.00、近5日相对强弱不再恶化时执行（计划 1 批，累计第 3/2 轮）",
+      "blocked_reason": "已补仓 2 次，达到上限 2",
+      "steps": [
+       {
+        "side": "BUY",
+        "quantity": 5.0,
+        "price": 380.0,
+        "label": "限价第1批·MA50"
+       }
+      ]
      },
      "reduce_risk": {
       "allowed": true,
@@ -969,7 +1355,10 @@
       "quantity_after": 10.0,
       "avg_cost_after": 400.0,
       "worst_loss": 150.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 10 股，保留 10 股，保护线 $375.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "rally_reduce": {
       "allowed": true,
@@ -979,7 +1368,23 @@
       "quantity_after": 10.0,
       "avg_cost_after": 400.0,
       "worst_loss": 300.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "反弹至 $396.00（现价+1×ATR）附近卖出 10 股；未反弹先跌破 $375.00 则止损（仍属不主动清仓路径）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 396.0,
+        "label": "反弹·现价+1×ATR"
+       },
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 375.0,
+        "label": "余仓硬止损"
+       }
+      ]
      },
      "switch": {
       "allowed": false,
@@ -989,16 +1394,25 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+      "steps": []
      }
     },
     "switch_targets": [
      "stop_exit",
      "rally_reduce",
+     "stop_exit",
      "reduce_risk"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": 380.0,
+    "hard_stop": 375.0,
+    "watch_days": 10,
+    "non_sell_plan": "hold_watch",
+    "non_sell_summary": "持有观察：守观察线 $380.00 / 硬止损 $375.00，10 个交易日；到止损最坏 $300（预算 30%）"
    }
   },
   {
@@ -1064,7 +1478,17 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 100 股；或收盘跌破硬止损 $26.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 100.0,
+        "price": 27.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "hold_watch": {
       "allowed": true,
@@ -1074,17 +1498,37 @@
       "quantity_after": 100.0,
       "avg_cost_after": 30.0,
       "worst_loss": 100.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "硬止损 $26.00；观察 10 个交易日；触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 100.0,
+        "price": 26.0,
+        "label": "硬止损"
+       }
+      ]
      },
      "average_down": {
       "allowed": false,
       "score": 0,
-      "price": null,
-      "quantity_change": 0.0,
-      "quantity_after": 0.0,
-      "avg_cost_after": null,
-      "worst_loss": 0.0,
-      "target_symbol": ""
+      "price": 26.4,
+      "quantity_change": 50.0,
+      "quantity_after": 150.0,
+      "avg_cost_after": 28.8,
+      "worst_loss": 119.99999999999993,
+      "target_symbol": "",
+      "trigger": "仅在价格回踩 $26.40 且收盘不破 $26.00、近5日相对强弱不再恶化时执行（计划 1 批，累计第 1/2 轮）",
+      "blocked_reason": "历史不足，无法确认趋势；近5日相对强弱 -3.97pp 未企稳",
+      "steps": [
+       {
+        "side": "BUY",
+        "quantity": 50.0,
+        "price": 26.4,
+        "label": "限价第1批·现价−0.5×ATR"
+       }
+      ]
      },
      "reduce_risk": {
       "allowed": false,
@@ -1094,7 +1538,10 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "历史不足，仅给出持有/离场",
+      "steps": []
      },
      "rally_reduce": {
       "allowed": false,
@@ -1104,7 +1551,10 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "历史不足，仅给出持有/离场",
+      "steps": []
      },
      "switch": {
       "allowed": false,
@@ -1114,14 +1564,22 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+      "steps": []
      }
     },
     "switch_targets": [
      "stop_exit"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": null,
+    "hard_stop": 26.0,
+    "watch_days": 10,
+    "non_sell_plan": "hold_watch",
+    "non_sell_summary": "持有观察：守硬止损 / 硬止损 $26.00，10 个交易日；到止损最坏 $100（预算 10%）"
    }
   },
   {
@@ -1202,7 +1660,17 @@
       "quantity_after": 30.0,
       "avg_cost_after": 180.0,
       "worst_loss": 240.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "保护线上移至 $192.00，收盘跌破则离场",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 30.0,
+        "price": 192.0,
+        "label": "上移后保护线"
+       }
+      ]
      },
      "add_on_strength": {
       "allowed": true,
@@ -1212,7 +1680,17 @@
       "quantity_after": 45.0,
       "avg_cost_after": 186.66666666666666,
       "worst_loss": 360.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近加 15 股，统一保护线 $192.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "BUY",
+        "quantity": 15.0,
+        "price": 200.0,
+        "label": "顺势加仓"
+       }
+      ]
      },
      "scale_out": {
       "allowed": true,
@@ -1222,7 +1700,10 @@
       "quantity_after": 20.0,
       "avg_cost_after": 180.0,
       "worst_loss": 160.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "已达止盈参考 $192.00，现价附近卖出 10 股",
+      "blocked_reason": "",
+      "steps": []
      },
      "reduce_risk": {
       "allowed": true,
@@ -1232,7 +1713,10 @@
       "quantity_after": 15.0,
       "avg_cost_after": 180.0,
       "worst_loss": 120.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 15 股，保留 15 股，保护线 $192.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "stop_exit": {
       "allowed": true,
@@ -1242,7 +1726,17 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 30 股；或收盘跌破硬止损 $192.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 30.0,
+        "price": 200.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "switch": {
       "allowed": false,
@@ -1252,7 +1746,10 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+      "steps": []
      }
     },
     "switch_targets": [
@@ -1261,7 +1758,12 @@
      "reduce_risk"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": null,
+    "hard_stop": 192.0,
+    "watch_days": 0,
+    "non_sell_plan": "",
+    "non_sell_summary": ""
    }
   },
   {
@@ -1341,27 +1843,63 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 50 股；或收盘跌破硬止损 $108.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 50.0,
+        "price": 112.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "hold_watch": {
       "allowed": true,
       "score": 45,
-      "price": 108.0,
+      "price": 110.0,
       "quantity_change": 0.0,
       "quantity_after": 50.0,
       "avg_cost_after": 120.0,
       "worst_loss": 200.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "观察线 $110.00（中期均线），硬止损 $108.00；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 25.0,
+        "price": 110.0,
+        "label": "连续2日收盘低于观察线则减半"
+       },
+       {
+        "side": "SELL",
+        "quantity": 25.0,
+        "price": 108.0,
+        "label": "硬止损"
+       }
+      ]
      },
      "average_down": {
       "allowed": true,
       "score": 40,
-      "price": 110.75,
+      "price": 110.0,
       "quantity_change": 25.0,
       "quantity_after": 75.0,
-      "avg_cost_after": 116.91666666666667,
-      "worst_loss": 268.75,
-      "target_symbol": ""
+      "avg_cost_after": 116.66666666666667,
+      "worst_loss": 250.0,
+      "target_symbol": "",
+      "trigger": "仅在价格回踩 $110.00 且收盘不破 $108.00、近5日相对强弱不再恶化时执行（计划 1 批，累计第 1/2 轮）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "BUY",
+        "quantity": 25.0,
+        "price": 110.0,
+        "label": "限价第1批·MA50"
+       }
+      ]
      },
      "reduce_risk": {
       "allowed": true,
@@ -1371,7 +1909,10 @@
       "quantity_after": 25.0,
       "avg_cost_after": 120.0,
       "worst_loss": 100.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 25 股，保留 25 股，保护线 $108.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "rally_reduce": {
       "allowed": true,
@@ -1381,7 +1922,23 @@
       "quantity_after": 25.0,
       "avg_cost_after": 120.0,
       "worst_loss": 200.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "反弹至 $115.00（MA20）附近卖出 25 股；未反弹先跌破 $108.00 则止损（仍属不主动清仓路径）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 25.0,
+        "price": 115.0,
+        "label": "反弹·MA20"
+       },
+       {
+        "side": "SELL",
+        "quantity": 25.0,
+        "price": 108.0,
+        "label": "余仓硬止损"
+       }
+      ]
      },
      "switch": {
       "allowed": false,
@@ -1391,16 +1948,26 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+      "steps": []
      }
     },
     "switch_targets": [
      "stop_exit",
      "hold_watch",
+     "average_down",
+     "stop_exit",
      "reduce_risk"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": 110.0,
+    "hard_stop": 108.0,
+    "watch_days": 10,
+    "non_sell_plan": "rally_reduce",
+    "non_sell_summary": "反弹至 $115.00（MA20）附近卖出 25 股；未反弹先跌破 $108.00 则止损（仍属不主动清仓路径）"
    }
   },
   {
@@ -1481,27 +2048,69 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 40 股；或收盘跌破硬止损 $111.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 40.0,
+        "price": 119.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "hold_watch": {
       "allowed": true,
       "score": 15,
-      "price": 111.0,
+      "price": 117.0,
       "quantity_change": 0.0,
       "quantity_after": 40.0,
       "avg_cost_after": 130.0,
       "worst_loss": 320.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "观察线 $117.00（10日通道下沿），硬止损 $111.00；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 20.0,
+        "price": 117.0,
+        "label": "连续2日收盘低于观察线则减半"
+       },
+       {
+        "side": "SELL",
+        "quantity": 20.0,
+        "price": 111.0,
+        "label": "硬止损"
+       }
+      ]
      },
      "average_down": {
       "allowed": false,
       "score": 0,
-      "price": null,
-      "quantity_change": 0.0,
-      "quantity_after": 0.0,
-      "avg_cost_after": null,
-      "worst_loss": 0.0,
-      "target_symbol": ""
+      "price": 117.0,
+      "quantity_change": 20.0,
+      "quantity_after": 60.0,
+      "avg_cost_after": 125.0,
+      "worst_loss": 400.0,
+      "target_symbol": "",
+      "trigger": "仅在价格回踩 $117.00/$113.00 且收盘不破 $111.00、近5日相对强弱不再恶化时执行（计划 2 批，累计第 1/2 轮）",
+      "blocked_reason": "近5日相对强弱 -3.75pp 未企稳",
+      "steps": [
+       {
+        "side": "BUY",
+        "quantity": 10.0,
+        "price": 117.0,
+        "label": "限价第1批·现价−0.5×ATR"
+       },
+       {
+        "side": "BUY",
+        "quantity": 10.0,
+        "price": 113.0,
+        "label": "限价第2批·现价−0.5×ATR−1×ATR"
+       }
+      ]
      },
      "reduce_risk": {
       "allowed": true,
@@ -1511,7 +2120,10 @@
       "quantity_after": 20.0,
       "avg_cost_after": 130.0,
       "worst_loss": 160.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 20 股，保留 20 股，保护线 $111.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "rally_reduce": {
       "allowed": true,
@@ -1521,7 +2133,23 @@
       "quantity_after": 20.0,
       "avg_cost_after": 130.0,
       "worst_loss": 320.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "反弹至 $124.00（MA20）附近卖出 20 股；未反弹先跌破 $111.00 则止损（仍属不主动清仓路径）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 20.0,
+        "price": 124.0,
+        "label": "反弹·MA20"
+       },
+       {
+        "side": "SELL",
+        "quantity": 20.0,
+        "price": 111.0,
+        "label": "余仓硬止损"
+       }
+      ]
      },
      "switch": {
       "allowed": false,
@@ -1531,17 +2159,26 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+      "steps": []
      }
     },
     "switch_targets": [
      "hold_watch",
      "average_down",
      "rally_reduce",
+     "stop_exit",
      "reduce_risk"
     ],
     "rs60": null,
-    "over_leveraged": false
+    "over_leveraged": false,
+    "watch_line": 117.0,
+    "hard_stop": 111.0,
+    "watch_days": 10,
+    "non_sell_plan": "hold_watch",
+    "non_sell_summary": "持有观察：守观察线 $117.00 / 硬止损 $111.00，10 个交易日；到止损最坏 $320（预算 32%）"
    }
   },
   {
@@ -1622,27 +2259,63 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出全部 20 股；或收盘跌破硬止损 $375.00",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 20.0,
+        "price": 390.0,
+        "label": "现价离场"
+       }
+      ]
      },
      "hold_watch": {
       "allowed": true,
       "score": 85,
-      "price": 375.0,
+      "price": 380.0,
       "quantity_change": 0.0,
       "quantity_after": 20.0,
       "avg_cost_after": 400.0,
       "worst_loss": 300.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "观察线 $380.00（中期均线），硬止损 $375.00；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 380.0,
+        "label": "连续2日收盘低于观察线则减半"
+       },
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 375.0,
+        "label": "硬止损"
+       }
+      ]
      },
      "average_down": {
       "allowed": false,
       "score": 0,
-      "price": null,
-      "quantity_change": 0.0,
-      "quantity_after": 0.0,
-      "avg_cost_after": null,
-      "worst_loss": 0.0,
-      "target_symbol": ""
+      "price": 380.0,
+      "quantity_change": 5.0,
+      "quantity_after": 25.0,
+      "avg_cost_after": 396.0,
+      "worst_loss": 325.0,
+      "target_symbol": "",
+      "trigger": "仅在价格回踩 $380.00 且收盘不破 $375.00、近5日相对强弱不再恶化时执行（计划 1 批，累计第 1/2 轮）",
+      "blocked_reason": "账户杠杆 130% > 100%，先降杠杆，禁止补仓/加仓/建仓",
+      "steps": [
+       {
+        "side": "BUY",
+        "quantity": 5.0,
+        "price": 380.0,
+        "label": "限价第1批·MA50"
+       }
+      ]
      },
      "reduce_risk": {
       "allowed": true,
@@ -1652,7 +2325,10 @@
       "quantity_after": 10.0,
       "avg_cost_after": 400.0,
       "worst_loss": 150.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "现价附近卖出 10 股，保留 10 股，保护线 $375.00",
+      "blocked_reason": "",
+      "steps": []
      },
      "rally_reduce": {
       "allowed": true,
@@ -1662,7 +2338,23 @@
       "quantity_after": 10.0,
       "avg_cost_after": 400.0,
       "worst_loss": 300.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "反弹至 $396.00（现价+1×ATR）附近卖出 10 股；未反弹先跌破 $375.00 则止损（仍属不主动清仓路径）",
+      "blocked_reason": "",
+      "steps": [
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 396.0,
+        "label": "反弹·现价+1×ATR"
+       },
+       {
+        "side": "SELL",
+        "quantity": 10.0,
+        "price": 375.0,
+        "label": "余仓硬止损"
+       }
+      ]
      },
      "switch": {
       "allowed": false,
@@ -1672,17 +2364,27 @@
       "quantity_after": 0.0,
       "avg_cost_after": null,
       "worst_loss": 0.0,
-      "target_symbol": ""
+      "target_symbol": "",
+      "trigger": "",
+      "blocked_reason": "账户杠杆 130% > 100%，先降杠杆，禁止补仓/加仓/建仓",
+      "steps": []
      }
     },
     "switch_targets": [
      "stop_exit",
+     "average_down",
      "rally_reduce",
+     "stop_exit",
      "reduce_risk",
      "hold_watch"
     ],
     "rs60": null,
-    "over_leveraged": true
+    "over_leveraged": true,
+    "watch_line": 380.0,
+    "hard_stop": 375.0,
+    "watch_days": 10,
+    "non_sell_plan": "hold_watch",
+    "non_sell_summary": "持有观察：守观察线 $380.00 / 硬止损 $375.00，10 个交易日；到止损最坏 $300（预算 30%）"
    }
   }
  ],
@@ -1862,7 +2564,17 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出全部 80 股；或收盘跌破硬止损 $78.00",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 80.0,
+         "price": 84.0,
+         "label": "现价离场"
+        }
+       ]
       },
       "hold_watch": {
        "allowed": true,
@@ -1872,17 +2584,43 @@
        "quantity_after": 80.0,
        "avg_cost_after": 100.0,
        "worst_loss": 480.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "硬止损 $78.00；观察 10 个交易日；触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 80.0,
+         "price": 78.0,
+         "label": "硬止损"
+        }
+       ]
       },
       "average_down": {
        "allowed": false,
        "score": 0,
-       "price": null,
-       "quantity_change": 0.0,
-       "quantity_after": 0.0,
-       "avg_cost_after": null,
-       "worst_loss": 0.0,
-       "target_symbol": ""
+       "price": 82.5,
+       "quantity_change": 40.0,
+       "quantity_after": 120.0,
+       "avg_cost_after": 93.66666666666667,
+       "worst_loss": 600.0,
+       "target_symbol": "",
+       "trigger": "仅在价格回踩 $82.50/$79.50 且收盘不破 $78.00、近5日相对强弱不再恶化时执行（计划 2 批，累计第 1/2 轮）",
+       "blocked_reason": "趋势已破位，禁止摊低；近5日相对强弱 -7.17pp 未企稳；浮亏 -16.0% 超过 15%，不再摊低",
+       "steps": [
+        {
+         "side": "BUY",
+         "quantity": 20.0,
+         "price": 82.5,
+         "label": "限价第1批·现价−0.5×ATR"
+        },
+        {
+         "side": "BUY",
+         "quantity": 20.0,
+         "price": 79.5,
+         "label": "限价第2批·现价−0.5×ATR−1×ATR"
+        }
+       ]
       },
       "reduce_risk": {
        "allowed": true,
@@ -1892,7 +2630,10 @@
        "quantity_after": 40.0,
        "avg_cost_after": 100.0,
        "worst_loss": 240.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出 40 股，保留 40 股，保护线 $78.00",
+       "blocked_reason": "",
+       "steps": []
       },
       "rally_reduce": {
        "allowed": true,
@@ -1902,7 +2643,23 @@
        "quantity_after": 40.0,
        "avg_cost_after": 100.0,
        "worst_loss": 480.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "反弹至 $87.00（现价+1×ATR）附近卖出 40 股；未反弹先跌破 $78.00 则止损（仍属不主动清仓路径）",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 40.0,
+         "price": 87.0,
+         "label": "反弹·现价+1×ATR"
+        },
+        {
+         "side": "SELL",
+         "quantity": 40.0,
+         "price": 78.0,
+         "label": "余仓硬止损"
+        }
+       ]
       },
       "switch": {
        "allowed": true,
@@ -1912,7 +2669,10 @@
        "quantity_after": 53.0,
        "avg_cost_after": 125.0,
        "worst_loss": 424.0,
-       "target_symbol": "NVDA"
+       "target_symbol": "NVDA",
+       "trigger": "卖出 80 股 AMD，换入约 53 股 NVDA（同板块近20日强 +20.2pp）",
+       "blocked_reason": "",
+       "steps": []
       }
      },
      "switch_targets": [
@@ -1921,7 +2681,12 @@
       "reduce_risk"
      ],
      "rs60": null,
-     "over_leveraged": false
+     "over_leveraged": false,
+     "watch_line": null,
+     "hard_stop": 78.0,
+     "watch_days": 10,
+     "non_sell_plan": "hold_watch",
+     "non_sell_summary": "持有观察：守硬止损 / 硬止损 $78.00，10 个交易日；到止损最坏 $480（预算 48%）"
     },
     "JPM": {
      "mode": "loss",
@@ -1951,7 +2716,17 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出全部 40 股；或收盘跌破硬止损 $190.00",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 40.0,
+         "price": 196.0,
+         "label": "现价离场"
+        }
+       ]
       },
       "hold_watch": {
        "allowed": true,
@@ -1961,7 +2736,17 @@
        "quantity_after": 40.0,
        "avg_cost_after": 200.0,
        "worst_loss": 240.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "硬止损 $190.00；观察 10 个交易日；触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 40.0,
+         "price": 190.0,
+         "label": "硬止损"
+        }
+       ]
       },
       "average_down": {
        "allowed": true,
@@ -1969,9 +2754,25 @@
        "price": 194.25,
        "quantity_change": 11.0,
        "quantity_after": 51.0,
-       "avg_cost_after": 198.75980392156862,
-       "worst_loss": 286.75,
-       "target_symbol": ""
+       "avg_cost_after": 198.69117647058823,
+       "worst_loss": 283.25,
+       "target_symbol": "",
+       "trigger": "仅在价格回踩 $194.25/$190.75 且收盘不破 $190.00、近5日相对强弱不再恶化时执行（计划 2 批，累计第 1/2 轮）",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "BUY",
+         "quantity": 10.0,
+         "price": 194.25,
+         "label": "限价第1批·现价−0.5×ATR"
+        },
+        {
+         "side": "BUY",
+         "quantity": 1.0,
+         "price": 190.75,
+         "label": "限价第2批·现价−0.5×ATR−1×ATR"
+        }
+       ]
       },
       "reduce_risk": {
        "allowed": true,
@@ -1981,7 +2782,10 @@
        "quantity_after": 20.0,
        "avg_cost_after": 200.0,
        "worst_loss": 120.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出 20 股，保留 20 股，保护线 $190.00",
+       "blocked_reason": "",
+       "steps": []
       },
       "rally_reduce": {
        "allowed": true,
@@ -1991,7 +2795,23 @@
        "quantity_after": 20.0,
        "avg_cost_after": 200.0,
        "worst_loss": 240.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "反弹至 $199.50（现价+1×ATR）附近卖出 20 股；未反弹先跌破 $190.00 则止损（仍属不主动清仓路径）",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 20.0,
+         "price": 199.5,
+         "label": "反弹·现价+1×ATR"
+        },
+        {
+         "side": "SELL",
+         "quantity": 20.0,
+         "price": 190.0,
+         "label": "余仓硬止损"
+        }
+       ]
       },
       "switch": {
        "allowed": false,
@@ -2001,16 +2821,25 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "",
+       "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+       "steps": []
       }
      },
      "switch_targets": [
       "stop_exit",
+      "average_down",
       "rally_reduce",
       "reduce_risk"
      ],
      "rs60": null,
-     "over_leveraged": false
+     "over_leveraged": false,
+     "watch_line": null,
+     "hard_stop": 190.0,
+     "watch_days": 10,
+     "non_sell_plan": "hold_watch",
+     "non_sell_summary": "持有观察：守硬止损 / 硬止损 $190.00，10 个交易日；到止损最坏 $240（预算 24%）"
     },
     "MSFT": {
      "mode": "profit",
@@ -2040,7 +2869,17 @@
        "quantity_after": 20.0,
        "avg_cost_after": 400.0,
        "worst_loss": 240.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "保护线上移至 $408.00，收盘跌破则离场",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 20.0,
+         "price": 408.0,
+         "label": "上移后保护线"
+        }
+       ]
       },
       "add_on_strength": {
        "allowed": true,
@@ -2050,7 +2889,17 @@
        "quantity_after": 23.0,
        "avg_cost_after": 402.60869565217394,
        "worst_loss": 276.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近加 3 股，统一保护线 $408.00",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "BUY",
+         "quantity": 3.0,
+         "price": 420.0,
+         "label": "顺势加仓"
+        }
+       ]
       },
       "scale_out": {
        "allowed": true,
@@ -2060,7 +2909,10 @@
        "quantity_after": 13.0,
        "avg_cost_after": 400.0,
        "worst_loss": 156.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "已达止盈参考 $418.00，现价附近卖出 7 股",
+       "blocked_reason": "",
+       "steps": []
       },
       "reduce_risk": {
        "allowed": true,
@@ -2070,7 +2922,10 @@
        "quantity_after": 10.0,
        "avg_cost_after": 400.0,
        "worst_loss": 120.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出 10 股，保留 10 股，保护线 $408.00",
+       "blocked_reason": "",
+       "steps": []
       },
       "stop_exit": {
        "allowed": true,
@@ -2080,7 +2935,17 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出全部 20 股；或收盘跌破硬止损 $408.00",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 20.0,
+         "price": 420.0,
+         "label": "现价离场"
+        }
+       ]
       },
       "switch": {
        "allowed": false,
@@ -2090,7 +2955,10 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "",
+       "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+       "steps": []
       }
      },
      "switch_targets": [
@@ -2099,7 +2967,12 @@
       "reduce_risk"
      ],
      "rs60": null,
-     "over_leveraged": false
+     "over_leveraged": false,
+     "watch_line": null,
+     "hard_stop": 408.0,
+     "watch_days": 0,
+     "non_sell_plan": "",
+     "non_sell_summary": ""
     },
     "NVDA": {
      "mode": "profit",
@@ -2129,7 +3002,17 @@
        "quantity_after": 150.0,
        "avg_cost_after": 110.0,
        "worst_loss": 900.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "保护线上移至 $119.00，收盘跌破则离场",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 150.0,
+         "price": 119.0,
+         "label": "上移后保护线"
+        }
+       ]
       },
       "add_on_strength": {
        "allowed": false,
@@ -2139,7 +3022,10 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "",
+       "blocked_reason": "约 5 天后财报，事件前不加仓",
+       "steps": []
       },
       "scale_out": {
        "allowed": true,
@@ -2149,7 +3035,10 @@
        "quantity_after": 100.0,
        "avg_cost_after": 110.0,
        "worst_loss": 600.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "已达止盈参考 $122.00，现价附近卖出 50 股",
+       "blocked_reason": "",
+       "steps": []
       },
       "reduce_risk": {
        "allowed": true,
@@ -2159,7 +3048,10 @@
        "quantity_after": 75.0,
        "avg_cost_after": 110.0,
        "worst_loss": 450.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出 75 股，保留 75 股，保护线 $119.00",
+       "blocked_reason": "",
+       "steps": []
       },
       "stop_exit": {
        "allowed": true,
@@ -2169,7 +3061,17 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出全部 150 股；或收盘跌破硬止损 $119.00",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 150.0,
+         "price": 125.0,
+         "label": "现价离场"
+        }
+       ]
       },
       "switch": {
        "allowed": false,
@@ -2179,7 +3081,10 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "",
+       "blocked_reason": "监控列表中无同板块、趋势完好且明显更强的标的",
+       "steps": []
       }
      },
      "switch_targets": [
@@ -2188,7 +3093,12 @@
       "hold_watch"
      ],
      "rs60": null,
-     "over_leveraged": false
+     "over_leveraged": false,
+     "watch_line": null,
+     "hard_stop": 119.0,
+     "watch_days": 0,
+     "non_sell_plan": "",
+     "non_sell_summary": ""
     }
    }
   }
@@ -2401,27 +3311,56 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出全部 160 股；或收盘跌破硬止损 $123.20",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 160.0,
+         "price": 138.6,
+         "label": "现价离场"
+        }
+       ]
       },
       "hold_watch": {
        "allowed": true,
        "score": 0,
-       "price": 123.2,
+       "price": 137.8,
        "quantity_change": 0.0,
        "quantity_after": 160.0,
        "avg_cost_after": 153.0,
        "worst_loss": 2463.9999999999986,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "观察线 $137.80（10日通道下沿），硬止损 $123.20；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 80.0,
+         "price": 137.8,
+         "label": "连续2日收盘低于观察线则减半"
+        },
+        {
+         "side": "SELL",
+         "quantity": 80.0,
+         "price": 123.2,
+         "label": "硬止损"
+        }
+       ]
       },
       "average_down": {
        "allowed": false,
        "score": 0,
-       "price": null,
-       "quantity_change": 0.0,
-       "quantity_after": 0.0,
-       "avg_cost_after": null,
-       "worst_loss": 0.0,
-       "target_symbol": ""
+       "price": 134.45,
+       "quantity_change": 0,
+       "quantity_after": 160.0,
+       "avg_cost_after": 153.0,
+       "worst_loss": 2463.9999999999986,
+       "target_symbol": "",
+       "trigger": "仅在价格回踩 $134.45/$126.15 且收盘不破 $123.20、近5日相对强弱不再恶化时执行",
+       "blocked_reason": "账户杠杆 155% > 100%，先降杠杆，禁止补仓/加仓/建仓；近5日相对强弱 -3.00pp 未企稳；风险预算或单股上限剩余不足",
+       "steps": []
       },
       "reduce_risk": {
        "allowed": true,
@@ -2431,7 +3370,10 @@
        "quantity_after": 34.0,
        "avg_cost_after": 153.0,
        "worst_loss": 523.5999999999997,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出 126 股，保留 34 股，保护线 $123.20",
+       "blocked_reason": "",
+       "steps": []
       },
       "rally_reduce": {
        "allowed": true,
@@ -2441,7 +3383,23 @@
        "quantity_after": 80.0,
        "avg_cost_after": 153.0,
        "worst_loss": 2463.9999999999986,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "反弹至 $146.90（现价+1×ATR）附近卖出 80 股；未反弹先跌破 $123.20 则止损（仍属不主动清仓路径）",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 80.0,
+         "price": 146.9,
+         "label": "反弹·现价+1×ATR"
+        },
+        {
+         "side": "SELL",
+         "quantity": 80.0,
+         "price": 123.2,
+         "label": "余仓硬止损"
+        }
+       ]
       },
       "switch": {
        "allowed": false,
@@ -2451,17 +3409,27 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "",
+       "blocked_reason": "账户杠杆 155% > 100%，先降杠杆，禁止补仓/加仓/建仓",
+       "steps": []
       }
      },
      "switch_targets": [
       "stop_exit",
       "hold_watch",
+      "average_down",
       "rally_reduce",
+      "stop_exit",
       "hold_watch"
      ],
      "rs60": -6.701089524206538,
-     "over_leveraged": true
+     "over_leveraged": true,
+     "watch_line": 137.8,
+     "hard_stop": 123.2,
+     "watch_days": 10,
+     "non_sell_plan": "hold_watch",
+     "non_sell_summary": "持有观察：守观察线 $137.80 / 硬止损 $123.20，10 个交易日；到止损最坏 $2,464（预算 460%）"
     },
     "TMO": {
      "mode": "loss",
@@ -2491,27 +3459,69 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出全部 20 股；或收盘跌破硬止损 $57.30",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 20.0,
+         "price": 68.0,
+         "label": "现价离场"
+        }
+       ]
       },
       "hold_watch": {
        "allowed": true,
        "score": 45,
-       "price": 57.3,
+       "price": 63.6,
        "quantity_change": 0.0,
        "quantity_after": 20.0,
        "avg_cost_after": 75.9,
        "worst_loss": 214.00000000000006,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "观察线 $63.60（10日通道下沿），硬止损 $57.30；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 10.0,
+         "price": 63.6,
+         "label": "连续2日收盘低于观察线则减半"
+        },
+        {
+         "side": "SELL",
+         "quantity": 10.0,
+         "price": 57.3,
+         "label": "硬止损"
+        }
+       ]
       },
       "average_down": {
        "allowed": false,
        "score": 0,
-       "price": null,
-       "quantity_change": 0.0,
-       "quantity_after": 0.0,
-       "avg_cost_after": null,
-       "worst_loss": 0.0,
-       "target_symbol": ""
+       "price": 67.9,
+       "quantity_change": 10.0,
+       "quantity_after": 30.0,
+       "avg_cost_after": 72.23333333333333,
+       "worst_loss": 290.00000000000017,
+       "target_symbol": "",
+       "trigger": "仅在价格回踩 $67.90/$61.90 且收盘不破 $57.30、近5日相对强弱不再恶化时执行（计划 2 批，累计第 1/2 轮）",
+       "blocked_reason": "账户杠杆 155% > 100%，先降杠杆，禁止补仓/加仓/建仓；近5日相对强弱 -2.00pp 未企稳",
+       "steps": [
+        {
+         "side": "BUY",
+         "quantity": 5.0,
+         "price": 67.9,
+         "label": "限价第1批·MA50"
+        },
+        {
+         "side": "BUY",
+         "quantity": 5.0,
+         "price": 61.900000000000006,
+         "label": "限价第2批·MA50−1×ATR"
+        }
+       ]
       },
       "reduce_risk": {
        "allowed": true,
@@ -2521,7 +3531,10 @@
        "quantity_after": 10.0,
        "avg_cost_after": 75.9,
        "worst_loss": 107.00000000000003,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出 10 股，保留 10 股，保护线 $57.30",
+       "blocked_reason": "",
+       "steps": []
       },
       "rally_reduce": {
        "allowed": true,
@@ -2531,7 +3544,23 @@
        "quantity_after": 10.0,
        "avg_cost_after": 75.9,
        "worst_loss": 214.00000000000006,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "反弹至 $75.60（MA20）附近卖出 10 股；未反弹先跌破 $57.30 则止损（仍属不主动清仓路径）",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 10.0,
+         "price": 75.6,
+         "label": "反弹·MA20"
+        },
+        {
+         "side": "SELL",
+         "quantity": 10.0,
+         "price": 57.3,
+         "label": "余仓硬止损"
+        }
+       ]
       },
       "switch": {
        "allowed": false,
@@ -2541,17 +3570,27 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "",
+       "blocked_reason": "账户杠杆 155% > 100%，先降杠杆，禁止补仓/加仓/建仓",
+       "steps": []
       }
      },
      "switch_targets": [
       "stop_exit",
+      "average_down",
       "rally_reduce",
+      "stop_exit",
       "reduce_risk",
       "hold_watch"
      ],
      "rs60": 28.99657393078934,
-     "over_leveraged": true
+     "over_leveraged": true,
+     "watch_line": 63.6,
+     "hard_stop": 57.3,
+     "watch_days": 10,
+     "non_sell_plan": "hold_watch",
+     "non_sell_summary": "持有观察：守观察线 $63.60 / 硬止损 $57.30，10 个交易日；到止损最坏 $214（预算 40%）"
     },
     "TXN": {
      "mode": "loss",
@@ -2581,27 +3620,69 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出全部 127 股；或收盘跌破硬止损 $42.20",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 127.0,
+         "price": 46.3,
+         "label": "现价离场"
+        }
+       ]
       },
       "hold_watch": {
        "allowed": true,
        "score": 0,
-       "price": 42.2,
+       "price": 44.3,
        "quantity_change": 0.0,
        "quantity_after": 127.0,
        "avg_cost_after": 50.3,
        "worst_loss": 520.6999999999992,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "观察线 $44.30（10日通道下沿），硬止损 $42.20；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 63.0,
+         "price": 44.3,
+         "label": "连续2日收盘低于观察线则减半"
+        },
+        {
+         "side": "SELL",
+         "quantity": 64.0,
+         "price": 42.2,
+         "label": "硬止损"
+        }
+       ]
       },
       "average_down": {
        "allowed": false,
        "score": 0,
-       "price": null,
-       "quantity_change": 0.0,
-       "quantity_after": 0.0,
-       "avg_cost_after": null,
-       "worst_loss": 0.0,
-       "target_symbol": ""
+       "price": 45.199999999999996,
+       "quantity_change": 6.0,
+       "quantity_after": 133.0,
+       "avg_cost_after": 50.053383458646614,
+       "worst_loss": 536.4999999999992,
+       "target_symbol": "",
+       "trigger": "仅在价格回踩 $45.20/$43.00 且收盘不破 $42.20、近5日相对强弱不再恶化时执行（计划 2 批，累计第 1/2 轮）",
+       "blocked_reason": "账户杠杆 155% > 100%，先降杠杆，禁止补仓/加仓/建仓；趋势已破位，禁止摊低；近5日相对强弱 -1.99pp 未企稳",
+       "steps": [
+        {
+         "side": "BUY",
+         "quantity": 5.0,
+         "price": 45.199999999999996,
+         "label": "限价第1批·现价−0.5×ATR"
+        },
+        {
+         "side": "BUY",
+         "quantity": 1.0,
+         "price": 42.99999999999999,
+         "label": "限价第2批·现价−0.5×ATR−1×ATR"
+        }
+       ]
       },
       "reduce_risk": {
        "allowed": true,
@@ -2611,7 +3692,10 @@
        "quantity_after": 63.0,
        "avg_cost_after": 50.3,
        "worst_loss": 258.2999999999996,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出 64 股，保留 63 股，保护线 $42.20",
+       "blocked_reason": "",
+       "steps": []
       },
       "rally_reduce": {
        "allowed": true,
@@ -2621,7 +3705,23 @@
        "quantity_after": 63.0,
        "avg_cost_after": 50.3,
        "worst_loss": 520.6999999999992,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "反弹至 $48.50（现价+1×ATR）附近卖出 64 股；未反弹先跌破 $42.20 则止损（仍属不主动清仓路径）",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 64.0,
+         "price": 48.5,
+         "label": "反弹·现价+1×ATR"
+        },
+        {
+         "side": "SELL",
+         "quantity": 63.0,
+         "price": 42.2,
+         "label": "余仓硬止损"
+        }
+       ]
       },
       "switch": {
        "allowed": false,
@@ -2631,17 +3731,27 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "",
+       "blocked_reason": "账户杠杆 155% > 100%，先降杠杆，禁止补仓/加仓/建仓",
+       "steps": []
       }
      },
      "switch_targets": [
       "hold_watch",
+      "average_down",
       "rally_reduce",
+      "stop_exit",
       "reduce_risk",
       "hold_watch"
      ],
      "rs60": -23.503223235846605,
-     "over_leveraged": true
+     "over_leveraged": true,
+     "watch_line": 44.3,
+     "hard_stop": 42.2,
+     "watch_days": 10,
+     "non_sell_plan": "hold_watch",
+     "non_sell_summary": "持有观察：守观察线 $44.30 / 硬止损 $42.20，10 个交易日；到止损最坏 $521（预算 97%）"
     },
     "V": {
      "mode": "loss",
@@ -2671,27 +3781,69 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出全部 139 股；或收盘跌破硬止损 $76.40",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 139.0,
+         "price": 86.6,
+         "label": "现价离场"
+        }
+       ]
       },
       "hold_watch": {
        "allowed": true,
        "score": 40,
-       "price": 76.4,
+       "price": 85.5,
        "quantity_change": 0.0,
        "quantity_after": 139.0,
        "avg_cost_after": 90.3,
        "worst_loss": 1417.7999999999984,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "观察线 $85.50（中期均线），硬止损 $76.40；观察 10 个交易日；连续 2 日收盘低于观察线减半，触及硬止损或近5日相对强弱再走弱 5pp 全部止损",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 69.0,
+         "price": 85.5,
+         "label": "连续2日收盘低于观察线则减半"
+        },
+        {
+         "side": "SELL",
+         "quantity": 70.0,
+         "price": 76.4,
+         "label": "硬止损"
+        }
+       ]
       },
       "average_down": {
        "allowed": false,
        "score": 0,
-       "price": null,
-       "quantity_change": 0.0,
-       "quantity_after": 0.0,
-       "avg_cost_after": null,
-       "worst_loss": 0.0,
-       "target_symbol": ""
+       "price": 85.5,
+       "quantity_change": 2.0,
+       "quantity_after": 141.0,
+       "avg_cost_after": 90.1950354609929,
+       "worst_loss": 1430.7999999999984,
+       "target_symbol": "",
+       "trigger": "仅在价格回踩 $85.50/$80.30 且收盘不破 $76.40、近5日相对强弱不再恶化时执行（计划 2 批，累计第 1/2 轮）",
+       "blocked_reason": "账户杠杆 155% > 100%，先降杠杆，禁止补仓/加仓/建仓；近5日相对强弱 -0.99pp 未企稳",
+       "steps": [
+        {
+         "side": "BUY",
+         "quantity": 1.0,
+         "price": 85.5,
+         "label": "限价第1批·MA50"
+        },
+        {
+         "side": "BUY",
+         "quantity": 1.0,
+         "price": 80.3,
+         "label": "限价第2批·MA50−1×ATR"
+        }
+       ]
       },
       "reduce_risk": {
        "allowed": true,
@@ -2701,7 +3853,10 @@
        "quantity_after": 52.0,
        "avg_cost_after": 90.3,
        "worst_loss": 530.3999999999994,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "现价附近卖出 87 股，保留 52 股，保护线 $76.40",
+       "blocked_reason": "",
+       "steps": []
       },
       "rally_reduce": {
        "allowed": true,
@@ -2711,7 +3866,23 @@
        "quantity_after": 69.0,
        "avg_cost_after": 90.3,
        "worst_loss": 1417.7999999999984,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "反弹至 $91.80（现价+1×ATR）附近卖出 70 股；未反弹先跌破 $76.40 则止损（仍属不主动清仓路径）",
+       "blocked_reason": "",
+       "steps": [
+        {
+         "side": "SELL",
+         "quantity": 70.0,
+         "price": 91.8,
+         "label": "反弹·现价+1×ATR"
+        },
+        {
+         "side": "SELL",
+         "quantity": 69.0,
+         "price": 76.4,
+         "label": "余仓硬止损"
+        }
+       ]
       },
       "switch": {
        "allowed": false,
@@ -2721,17 +3892,27 @@
        "quantity_after": 0.0,
        "avg_cost_after": null,
        "worst_loss": 0.0,
-       "target_symbol": ""
+       "target_symbol": "",
+       "trigger": "",
+       "blocked_reason": "账户杠杆 155% > 100%，先降杠杆，禁止补仓/加仓/建仓",
+       "steps": []
       }
      },
      "switch_targets": [
       "stop_exit",
       "hold_watch",
+      "average_down",
       "rally_reduce",
+      "stop_exit",
       "hold_watch"
      ],
      "rs60": 32.59525895464841,
-     "over_leveraged": true
+     "over_leveraged": true,
+     "watch_line": 85.5,
+     "hard_stop": 76.4,
+     "watch_days": 10,
+     "non_sell_plan": "hold_watch",
+     "non_sell_summary": "持有观察：守观察线 $85.50 / 硬止损 $76.40，10 个交易日；到止损最坏 $1,418（预算 265%）"
     }
    }
   }

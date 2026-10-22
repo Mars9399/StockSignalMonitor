@@ -1096,7 +1096,9 @@ class SignalMonitorApp:
         self.diagnoses = {item.symbol: item for item in portfolio.holdings}
         notes = "；".join(portfolio.notes[:3]) if portfolio.notes else "暂无组合提示"
         leverage = f"杠杆 {portfolio.leverage_pct:.0f}% · " if portfolio.leverage_pct else ""
-        self.diagnosis_notes_var.set(f"持仓诊断：{leverage}{notes}")
+        non_sell = next((item.non_sell_summary for item in portfolio.holdings if item.non_sell_summary), "")
+        suffix = f" · 若不卖出示例：{non_sell}" if non_sell else ""
+        self.diagnosis_notes_var.set(f"持仓诊断：{leverage}{notes}{suffix}")
         self._render_diagnosis_tree()
 
     def _render_diagnosis_tree(self) -> None:

@@ -233,6 +233,9 @@ def plan_summary(plan) -> dict:
         "avg_cost_after": plan.avg_cost_after,
         "worst_loss": plan.worst_loss,
         "target_symbol": plan.target_symbol,
+        "trigger": plan.trigger,
+        "blocked_reason": plan.blocked_reason,
+        "steps": plan.steps,
     }
 
 
@@ -253,6 +256,11 @@ def expected_for(diagnosis) -> dict:
         "switch_targets": [item["target"] for item in diagnosis.switch_conditions],
         "rs60": diagnosis.rs60,
         "over_leveraged": diagnosis.over_leveraged,
+        "watch_line": diagnosis.watch_line,
+        "hard_stop": diagnosis.hard_stop,
+        "watch_days": diagnosis.watch_days,
+        "non_sell_plan": diagnosis.non_sell_plan,
+        "non_sell_summary": diagnosis.non_sell_summary,
     }
 
 

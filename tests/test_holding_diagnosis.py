@@ -87,13 +87,22 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(result.trend_state, "intact")
         self.assertEqual(result.loss_source, "market")
         self.assertEqual(result.recommended, "hold_watch")
+        self.assertEqual(result.non_sell_plan, "hold_watch")
+        self.assertEqual(result.watch_line, 380.0)  # MA50 soft watch above hard stop
+        self.assertEqual(result.hard_stop, 375.0)
+        self.assertEqual(result.watch_days, 10)
+        hold = result.plan("hold_watch")
+        self.assertIn("观察线", hold.trigger)
+        self.assertIn("硬止损", hold.trigger)
+        self.assertEqual(len(hold.steps), 2)
         add = result.plan("average_down")
         self.assertTrue(add.allowed)
-        # Limited by single-stock cap: (10000 - 20*390) / 387 -> 5 shares.
-        self.assertEqual(add.price, 387.0)
+        # First tranche at MA50; sized by single-stock headroom → 5 shares.
+        self.assertEqual(add.price, 380.0)
         self.assertEqual(add.quantity_change, 5)
-        self.assertAlmostEqual(add.avg_cost_after, (400 * 20 + 387 * 5) / 25)
-        self.assertAlmostEqual(add.worst_loss, (390 - 375) * 20 + (387 - 375) * 5)
+        self.assertEqual(add.steps[0]["price"], 380.0)
+        self.assertAlmostEqual(add.avg_cost_after, (400 * 20 + 380 * 5) / 25)
+        self.assertAlmostEqual(add.worst_loss, (390 - 375) * 20 + (380 - 375) * 5)
         self.assertAlmostEqual(add.budget_pct, add.worst_loss / 1000 * 100)
 
     def test_intact_small_loss_without_recent_weakness(self):
@@ -215,7 +224,7 @@ class EdgeTests(unittest.TestCase):
     def test_settings_are_configurable(self):
         loose = DiagnosisSettings.from_configs(
             {"account_value": 100000, "risk_pct": 1, "max_position_pct": 20},
-            {"diagnosis_average_down_fraction": 0.25},
+            {"diagnosis_average_down_fraction": 0.25, "diagnosis_average_down_tranches": 1},
         )
         source = case("market_pullback_small_loss")
         context = DiagnosisContext(
@@ -227,6 +236,36 @@ class EdgeTests(unittest.TestCase):
         clamped = DiagnosisSettings.from_configs({"risk_pct": 99}, {"diagnosis_max_average_down_count": -3})
         self.assertEqual(clamped.risk_pct, 10.0)
         self.assertEqual(clamped.max_average_down_count, 0)
+
+    def test_loss_non_sell_path_quantifies_hold_and_paper_average_down(self):
+        """When the user chooses not to sell: hold playbook + average-down math even if blocked."""
+        data = FIXTURE["leveraged_portfolio"]
+        result = run_portfolio(data, leveraged_settings())
+        tmo = next(item for item in result.holdings if item.symbol == "TMO")
+        self.assertEqual(tmo.mode, "loss")
+        self.assertEqual(tmo.recommended, "hold_watch")
+        self.assertEqual(tmo.non_sell_plan, "hold_watch")
+        self.assertAlmostEqual(tmo.watch_line, 63.6, places=1)
+        self.assertAlmostEqual(tmo.hard_stop, 57.3, places=1)
+        self.assertEqual(tmo.watch_days, 10)
+        hold = tmo.plan("hold_watch")
+        self.assertIn("观察线", hold.trigger)
+        self.assertIn("硬止损", hold.trigger)
+        self.assertIn("观察 10 个交易日", hold.trigger)
+        self.assertEqual([step["side"] for step in hold.steps], ["SELL", "SELL"])
+        add = tmo.plan("average_down")
+        self.assertFalse(add.allowed)
+        self.assertIn("先降杠杆", add.blocked_reason)
+        self.assertGreaterEqual(len(add.steps), 1)
+        self.assertAlmostEqual(add.steps[0]["price"], 67.9, places=0)  # MA50 pullback
+        self.assertIsNotNone(add.avg_cost_after)
+        self.assertLess(add.avg_cost_after, tmo.avg_cost)
+        self.assertGreater(add.worst_loss, tmo.hold_risk)
+        # Sell-recommended name still exposes a non-sell hold playbook.
+        txn = next(item for item in result.holdings if item.symbol == "TXN")
+        self.assertEqual(txn.recommended, "stop_exit")
+        self.assertEqual(txn.non_sell_plan, "hold_watch")
+        self.assertIn("硬止损", txn.non_sell_summary)
 
     def test_settings_persist_in_monitor_settings(self):
         with tempfile.TemporaryDirectory() as folder:

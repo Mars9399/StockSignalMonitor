@@ -99,9 +99,24 @@ final class HoldingDiagnosisTests: XCTestCase {
         assertClose(diagnosis.stop, expected["stop"], "\(label).stop")
         assertClose(diagnosis.holdRisk, expected["hold_risk"], "\(label).hold_risk")
         assertClose(diagnosis.rs60, expected["rs60"], "\(label).rs60")
+        assertClose(diagnosis.watchLine, expected["watch_line"], "\(label).watch_line")
+        assertClose(diagnosis.hardStop, expected["hard_stop"], "\(label).hard_stop")
+        XCTAssertEqual(diagnosis.watchDays, Int(number(expected["watch_days"]) ?? 0), "\(label).watch_days")
+        let wantNonSell = expected["non_sell_plan"] as? String ?? ""
+        XCTAssertEqual(diagnosis.nonSellPlan?.rawValue ?? "", wantNonSell, "\(label).non_sell_plan")
         XCTAssertEqual(diagnosis.plans.map(\.kind.rawValue), expected["plan_order"] as? [String], label)
         XCTAssertEqual(diagnosis.switchConditions.map(\.target.rawValue), expected["switch_targets"] as? [String], label)
         assertPlans(diagnosis, expected, label: label)
+        for plan in diagnosis.plans {
+            let want = dict(dict(expected["plans"])[plan.kind.rawValue])
+            let wantSteps = want["steps"] as? [[String: Any]] ?? []
+            XCTAssertEqual(plan.steps.count, wantSteps.count, "\(label).\(plan.kind.rawValue).steps")
+            for (step, raw) in zip(plan.steps, wantSteps) {
+                XCTAssertEqual(step.side, raw["side"] as? String)
+                assertClose(step.quantity, raw["quantity"], "\(label).step.qty")
+                assertClose(step.price, raw["price"], "\(label).step.price")
+            }
+        }
     }
 
     func testCasesMatchPythonFixture() throws {
