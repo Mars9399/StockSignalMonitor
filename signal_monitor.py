@@ -23,6 +23,7 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockLatestTradeRequest
 from alpaca.data.timeframe import TimeFrame
 from dotenv import load_dotenv
+from holding_diagnosis import holding_metric_fields
 from reliability import NEW_YORK, observation_reason
 
 
@@ -342,8 +343,14 @@ def calculate_levels(
 
     prev_close = float(close.iloc[-1]) if len(close) else live_price
     day_change_pct = ((live_price / prev_close) - 1.0) * 100.0 if prev_close > 0 else 0.0
+    diagnosis_fields = holding_metric_fields(
+        frame["high"].astype(float).tolist(),
+        frame["low"].astype(float).tolist(),
+        close.tolist(),
+    )
 
     return {
+        **diagnosis_fields,
         "status": status,
         "price": live_price,
         "buy_point": buy_point,

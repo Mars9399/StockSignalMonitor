@@ -1,4 +1,5 @@
 import SwiftUI
+import StockSignalCore
 
 struct SignalDetailView: View {
     let store: MacMonitorStore
@@ -60,8 +61,12 @@ struct SignalDetailView: View {
                     .padding(.vertical, 4)
                 }
 
+                if let diagnosis = signal.diagnosis {
+                    HoldingDiagnosisCard(diagnosis: diagnosis, portfolioNotes: signal.portfolioNotes)
+                }
+
                 Label(
-                    "* 操作评分为规则结果，不是历史胜率或收益保证。本应用只显示行情、信号和仓位参考，不包含任何下单接口。",
+                    "* 操作评分为规则结果，不是历史胜率或收益保证。本应用只显示行情、信号和仓位参考，不包含任何下单接口。持仓诊断为规则化分析辅助，非投资建议。",
                     systemImage: "lock.shield"
                 )
                 .font(.callout)
@@ -139,6 +144,87 @@ private struct DetailRow: View {
             Text(value)
                 .textSelection(.enabled)
                 .gridColumnAlignment(.leading)
+        }
+    }
+}
+
+private struct HoldingDiagnosisCard: View {
+    let diagnosis: HoldingDiagnosis
+    let portfolioNotes: [String]
+
+    var body: some View {
+        GroupBox("持仓诊断（规则化）") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(diagnosis.summary)
+                    .font(.headline)
+                Text("推荐：\(diagnosis.recommendedPlan?.name ?? diagnosis.recommended.name(for: diagnosis.mode)) · 置信度 \(diagnosis.confidence)")
+                Text("趋势 \(diagnosis.trendState.label) · \(diagnosis.lossSourceLabel) · 硬止损 $\(String(format: "%.2f", diagnosis.stop))（\(diagnosis.stopBasis)）")
+                    .foregroundStyle(.secondary)
+                if let watch = diagnosis.watchLine {
+                    Text("观察线 $\(String(format: "%.2f", watch)) · 观察 \(diagnosis.watchDays) 个交易日")
+                        .foregroundStyle(.secondary)
+                }
+                if !diagnosis.nonSellSummary.isEmpty {
+                    Text("若不卖出：\(diagnosis.nonSellSummary)")
+                        .font(.callout)
+                }
+                if diagnosis.overLeveraged, let leverage = diagnosis.leveragePercent {
+                    Text("账户杠杆 \(String(format: "%.0f", leverage))% 超上限，优先降杠杆，禁止补仓/加仓/建仓")
+                        .foregroundStyle(.orange)
+                }
+                DisclosureGroup("全部方案对比") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(diagnosis.plans) { plan in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(plan.name).fontWeight(.semibold)
+                                    Spacer()
+                                    Text(plan.allowed ? "评分 \(plan.score)" : "不可用")
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text(plan.allowed ? plan.trigger : plan.blockedReason)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                ForEach(Array(plan.steps.enumerated()), id: \.offset) { _, step in
+                                    Text("· \(step.side) \(String(format: "%g", step.quantity)) @ $\(String(format: "%.2f", step.price))（\(step.label)）")
+                                        .font(.caption2)
+                                }
+                                if plan.kind == .averageDown, let avg = plan.averageCostAfter {
+                                    Text("补后成本 $\(String(format: "%.2f", avg)) · 到保护线最坏 $\(String(format: "%.0f", plan.worstLoss))")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                } else if plan.allowed {
+                                    Text("最坏亏损 $\(String(format: "%.0f", plan.worstLoss)) · 预算 \(String(format: "%.0f", plan.budgetPercent))%")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        if !diagnosis.switchConditions.isEmpty {
+                            Divider()
+                            Text("切换条件").fontWeight(.semibold)
+                            ForEach(Array(diagnosis.switchConditions.enumerated()), id: \.offset) { _, item in
+                                Text("· \(item.condition) → \(item.targetName)")
+                                    .font(.caption)
+                            }
+                        }
+                        if !portfolioNotes.isEmpty {
+                            Divider()
+                            Text("组合提示").fontWeight(.semibold)
+                            ForEach(portfolioNotes, id: \.self) { note in
+                                Text("· \(note)").font(.caption)
+                            }
+                        }
+                        Text(HoldingDiagnosisText.disclaimer)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
         }
     }
 }

@@ -124,13 +124,26 @@ public struct Position: Codable, Hashable, Sendable {
     public var quantity: Double
     public var initialStop: Double?
     public var riskReferencePrice: Double?
+    /// Completed average-down batches for the diagnosis engine (optional; default 0).
+    public var averageDownCount: Int
 
-    public init(symbol: String, averageCost: Double = 0, quantity: Double = 0, initialStop: Double? = nil, riskReferencePrice: Double? = nil) {
+    public init(symbol: String, averageCost: Double = 0, quantity: Double = 0, initialStop: Double? = nil, riskReferencePrice: Double? = nil, averageDownCount: Int = 0) {
         self.symbol = symbol.uppercased()
         self.averageCost = max(0, averageCost)
         self.quantity = max(0, quantity)
         self.initialStop = initialStop
         self.riskReferencePrice = riskReferencePrice
+        self.averageDownCount = max(0, averageDownCount)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        symbol = try container.decode(String.self, forKey: .symbol).uppercased()
+        averageCost = max(0, try container.decode(Double.self, forKey: .averageCost))
+        quantity = max(0, try container.decode(Double.self, forKey: .quantity))
+        initialStop = try container.decodeIfPresent(Double.self, forKey: .initialStop)
+        riskReferencePrice = try container.decodeIfPresent(Double.self, forKey: .riskReferencePrice)
+        averageDownCount = max(0, try container.decodeIfPresent(Int.self, forKey: .averageDownCount) ?? 0)
     }
 
     /// A current-time monitoring baseline, not a reconstruction of entry risk.
@@ -239,6 +252,7 @@ public struct MonitoredStock: Identifiable, Hashable, Sendable {
     public var suggestion: TradeSuggestion?
     public var actionScore: ActionProbabilityScore?
     public var errorMessage: String?
+    public var diagnosis: HoldingDiagnosis?
 
     public init(symbol: String, name: String = "", position: Position? = nil) {
         let normalized = symbol.uppercased()

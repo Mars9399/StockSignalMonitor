@@ -9,9 +9,13 @@ public final class MonitorStore {
     public private(set) var connectionMessage = "未启动"
     public private(set) var lastUpdated: Date?
     public private(set) var errorMessage: String?
+    public private(set) var portfolioDiagnosis: PortfolioDiagnosis?
     public var riskSettings: RiskSettings
     public var configuration: DataProviderConfiguration
     public var strategySettings: MonitorStrategySettings
+    /// Optional live account context for leverage (net liquidation / gross long value).
+    public var netLiquidation: Double?
+    public var grossPositionValue: Double?
 
     @ObservationIgnored private let serviceFactory: MarketDataServiceFactory
     @ObservationIgnored private var service: (any MarketDataService)?
@@ -99,9 +103,9 @@ public final class MonitorStore {
         connectionMessage = "正在更新 \(configuration.kind.displayName) 行情…"
         do {
             let service = try resolvedService()
-            let requestedSymbols = symbols
+            let requestedSymbols = Set(symbols + contextSymbols())
             var updatedCount = 0
-            for symbol in requestedSymbols {
+            for symbol in requestedSymbols.sorted() {
                 do {
                     async let history = service.history(for: symbol, lookbackDays: 730)
                     async let quote = service.quote(for: symbol)
@@ -118,9 +122,11 @@ public final class MonitorStore {
                         stocks[index].errorMessage = error.localizedDescription
                         stocks[index].plan = nil
                         stocks[index].levels = nil
+                        stocks[index].diagnosis = nil
                     }
                 }
             }
+            refreshDiagnoses()
             if updatedCount > 0 {
                 lastUpdated = .now
                 historyDay = DataReliability.day(.now)
@@ -157,14 +163,12 @@ public final class MonitorStore {
                     let service = try self.resolvedService()
                     self.connectionMessage = "正在监控 \(self.configuration.kind.displayName) 行情 · 轮询 \(self.strategySettings.quotePollSeconds)s"
                     var symbols = self.symbols
-                    let benchmark = self.strategySettings.benchmarkSymbol
-                    if self.strategySettings.filterRelativeStrengthEnabled, !symbols.contains(benchmark) {
-                        symbols.append(benchmark)
-                    }
+                    for aux in self.contextSymbols() where !symbols.contains(aux) { symbols.append(aux) }
                     for try await quotes in service.quoteStream(for: symbols, pollInterval: poll) {
                         guard !Task.isCancelled else { break }
                         if self.historyDay != DataReliability.day(.now) { await self.refresh() }
                         for quote in quotes { self.applyLiveQuote(quote) }
+                        self.refreshDiagnoses()
                         if !quotes.isEmpty {
                             self.lastUpdated = .now
                             retrySeconds = 1
@@ -199,7 +203,9 @@ public final class MonitorStore {
             if let plan = stocks[index].plan {
                 stocks[index].plan = PositionPlan(riskReductionPoint: plan.riskReductionPoint, profitTarget2R: plan.profitTarget2R, profitTarget3R: plan.profitTarget3R, maximumShares: 0, action: .observationOnly("监控已停止"))
                 stocks[index].levels?.status = .noSignal
+                stocks[index].diagnosis = nil
             }
+            portfolioDiagnosis = nil
         }
     }
 
@@ -211,9 +217,61 @@ public final class MonitorStore {
     }
 
     private func applyLiveQuote(_ quote: StockQuote) {
-        guard let index = stocks.firstIndex(where: { $0.symbol == quote.symbol }),
-              let history = histories[quote.symbol] else { return }
-        apply(quote: quote, history: history, at: index)
+        guard let history = histories[quote.symbol] else { return }
+        if let index = stocks.firstIndex(where: { $0.symbol == quote.symbol }) {
+            apply(quote: quote, history: history, at: index)
+            return
+        }
+        // Auxiliary benchmark / sector ETF: keep history price current for diagnosis only.
+        if quote.symbol == strategySettings.benchmarkSymbol, let previous = history.last?.close, previous > 0 {
+            benchmarkChangePercent = (quote.price / previous - 1) * 100
+        }
+    }
+
+    public func setAccountContext(netLiquidation: Double?, grossPositionValue: Double?) {
+        self.netLiquidation = netLiquidation
+        self.grossPositionValue = grossPositionValue
+        refreshDiagnoses()
+    }
+
+    private func contextSymbols() -> [String] {
+        var extra = HoldingDiagnosisEngine.contextSymbols(
+            positions: stocks.map(\.position),
+            benchmarkSymbol: strategySettings.benchmarkSymbol
+        )
+        if strategySettings.filterRelativeStrengthEnabled,
+           !extra.contains(strategySettings.benchmarkSymbol) {
+            extra.insert(strategySettings.benchmarkSymbol, at: 0)
+        }
+        return extra
+    }
+
+    private func refreshDiagnoses() {
+        var metrics: [String: HoldingMetrics] = [:]
+        for (symbol, history) in histories {
+            let price: Double?
+            if let index = stocks.firstIndex(where: { $0.symbol == symbol }) {
+                price = stocks[index].quote?.price ?? history.last?.close
+            } else {
+                price = history.last?.close
+            }
+            guard let price, let computed = HoldingMetrics.compute(history: history, livePrice: price) else { continue }
+            metrics[symbol] = computed
+        }
+        let settings = HoldingDiagnosisSettings().resolved(risk: riskSettings, strategy: strategySettings)
+        let portfolio = HoldingDiagnosisEngine.diagnosePortfolio(
+            positions: stocks.map(\.position).filter { $0.quantity > 0 && $0.averageCost > 0 },
+            metrics: metrics,
+            settings: settings,
+            benchmarkSymbol: strategySettings.benchmarkSymbol,
+            netLiquidation: netLiquidation,
+            grossPositionValue: grossPositionValue
+        )
+        portfolioDiagnosis = portfolio
+        let bySymbol = Dictionary(uniqueKeysWithValues: portfolio.holdings.map { ($0.symbol, $0) })
+        for index in stocks.indices {
+            stocks[index].diagnosis = bySymbol[stocks[index].symbol]
+        }
     }
 
     private func apply(quote: StockQuote, history: [DailyBar], at index: Int) {
@@ -281,6 +339,7 @@ public final class MonitorStore {
             stocks[index].plan = nil
             stocks[index].suggestion = nil
             stocks[index].actionScore = nil
+            stocks[index].diagnosis = nil
         }
     }
 
