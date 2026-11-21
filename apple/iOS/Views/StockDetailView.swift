@@ -34,6 +34,9 @@ struct StockDetailView: View {
 
                         signalSection(stock)
                         positionSection(stock)
+                        if let diagnosis = stock.diagnosis {
+                            diagnosisSection(diagnosis)
+                        }
                         modelSection(stock)
 
                         if let errorMessage = stock.errorMessage {
@@ -106,6 +109,39 @@ struct StockDetailView: View {
                     Divider()
                     Label(DisplayFormatting.action(stock.plan?.action), systemImage: "lightbulb")
                         .foregroundStyle(.primary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func diagnosisSection(_ diagnosis: HoldingDiagnosis) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("持仓诊断")
+                .font(.title3.bold())
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(diagnosis.summary).fontWeight(.semibold)
+                    Text("保护线 $\(String(format: "%.2f", diagnosis.stop)) · \(diagnosis.stopBasis)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    DisclosureGroup("全部方案对比") {
+                        ForEach(diagnosis.plans) { plan in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(plan.allowed ? "\(plan.name) · 评分 \(plan.score)" : "\(plan.name) · 不可用")
+                                    .font(.caption.weight(.semibold))
+                                Text(plan.allowed ? plan.trigger : plan.blockedReason)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        Text(HoldingDiagnosisText.disclaimer)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

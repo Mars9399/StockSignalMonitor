@@ -103,6 +103,10 @@ final class CoreMonitoringBackend: MonitoringBackend {
         coreStore = nil
     }
 
+    func setAccountContext(netLiquidation: Double?, grossPositionValue: Double?) {
+        coreStore?.setAccountContext(netLiquidation: netLiquidation, grossPositionValue: grossPositionValue)
+    }
+
     private func makeConfiguration(_ snapshot: ProviderConfigurationSnapshot) throws -> DataProviderConfiguration {
         switch snapshot.provider {
         case .yahoo:
@@ -123,15 +127,17 @@ final class CoreMonitoringBackend: MonitoringBackend {
             let referencePrice = stock.quote?.price ?? stock.position.averageCost
             return total + max(0, stock.position.quantity) * max(0, referencePrice)
         }
+        let notes = store.portfolioDiagnosis?.notes ?? []
         return store.stocks.map {
-            present($0, riskSettings: store.riskSettings, portfolioValue: portfolioValue)
+            present($0, riskSettings: store.riskSettings, portfolioValue: portfolioValue, portfolioNotes: notes)
         }
     }
 
     private static func present(
         _ stock: MonitoredStock,
         riskSettings: RiskSettings,
-        portfolioValue: Double
+        portfolioValue: Double,
+        portfolioNotes: [String]
     ) -> SignalPresentation {
         let levels = stock.levels
         let plan = stock.plan
@@ -148,6 +154,10 @@ final class CoreMonitoringBackend: MonitoringBackend {
             let rsi = String(format: "%.0f", value.rsi14)
             return "\(value.quality.rawValue) · \(value.modelName) · 5日动量 \(momentum) · RSI \(rsi)"
         } ?? "—"
+        var action = actionText(plan?.action)
+        if let summary = stock.diagnosis?.summary, !summary.isEmpty {
+            action = "\(action)\n诊断：\(summary)"
+        }
         return .init(
             symbol: stock.symbol,
             companyName: CompanyNameResolver.resolve(symbol: stock.symbol, suppliedName: stock.name),
@@ -158,13 +168,15 @@ final class CoreMonitoringBackend: MonitoringBackend {
             profitTarget3R: positive(plan?.profitTarget3R),
             status: presentationStatus(levels: levels, plan: plan, error: stock.errorMessage),
             signalQuality: signalQuality,
-            action: actionText(plan?.action),
+            action: action,
             buyProbability: levels?.isReady == true ? score?.buyProbability : nil,
             reduceProbability: levels?.isReady == true ? score?.reduceProbability : nil,
             buyProbabilityLabel: score?.buyLabel ?? "等待",
             reduceProbabilityLabel: score?.reduceLabel ?? "等待",
             updatedAt: stock.quote?.timestamp,
-            historyDays: levels?.historyDays ?? 0
+            historyDays: levels?.historyDays ?? 0,
+            diagnosis: stock.diagnosis,
+            portfolioNotes: portfolioNotes
         )
     }
 

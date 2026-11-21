@@ -483,6 +483,7 @@ final class MacMonitorStore {
         twsAccountSummary = summary
         let pnlStatus = includesLivePnL ? "实时盈亏已同步" : "盈亏暂不可用"
         twsAccountSummaryMessage = "账户 \(summary.account) · \(pnlStatus) · 已更新 \(Date.now.formatted(date: .omitted, time: .standard))"
+        backend.setAccountContext(netLiquidation: summary.netLiquidation, grossPositionValue: summary.grossPositionValue)
         log("已读取 TWS 账户 \(summary.account) 情况 · \(pnlStatus)")
     }
 

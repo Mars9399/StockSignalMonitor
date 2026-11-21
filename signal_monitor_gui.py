@@ -20,7 +20,14 @@ from dotenv import load_dotenv
 import yfinance as yf
 
 from data_providers import AlpacaWorker, IBKRWorker, MassiveWorker, ProviderWorker, YahooWorker
-from explain import explain_suggestion
+from explain import explain_diagnosis, explain_suggestion
+from holding_diagnosis import (
+    DISCLAIMER as DIAGNOSIS_DISCLAIMER,
+    DiagnosisSettings,
+    HoldingMetrics,
+    context_symbols as diagnosis_context_symbols,
+    diagnose_portfolio,
+)
 from market_directory import MarketDirectoryClient, MarketDirectoryPage
 from market_movers import MarketMoverWorker, MoverResult
 from monitor_settings import read_monitor_settings, write_monitor_settings
@@ -198,16 +205,23 @@ def read_positions() -> dict[str, dict[str, float]]:
         return {}
     try:
         raw = json.loads(POSITIONS_FILE.read_text(encoding="utf-8"))
-        return {
-            str(symbol).upper(): {
+        result = {}
+        for symbol, values in raw.items():
+            if not isinstance(values, dict):
+                continue
+            entry = {
                 "avg_cost": max(0.0, float(values.get("avg_cost", 0))),
                 "quantity": max(0.0, float(values.get("quantity", 0))),
                 "initial_stop": values.get("initial_stop"),
                 "risk_reference_price": values.get("risk_reference_price"),
             }
-            for symbol, values in raw.items()
-            if isinstance(values, dict)
-        }
+            try:
+                adds = int(float(values.get("average_down_count") or 0))
+            except (TypeError, ValueError):
+                adds = 0
+            entry["average_down_count"] = max(0, adds)
+            result[str(symbol).upper()] = entry
+        return result
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return {}
 
@@ -429,6 +443,9 @@ class SignalMonitorApp:
         self.account_summary_var = tk.StringVar(value="TWS 当前账户：尚未读取")
         self.portfolio_summary_var = tk.StringVar(value="组合摘要：启动监控或保存持仓后显示")
         self.connection_detail_var = tk.StringVar(value="测试版 2.6.0 · P0–P3 优化")
+        self.diagnoses: dict = {}
+        self.portfolio_diagnosis = None
+        self.diagnosis_notes_var = tk.StringVar(value="持仓诊断：启动监控并加载行情后显示")
 
         self._configure_style()
         self._build_ui()
@@ -665,6 +682,7 @@ class SignalMonitorApp:
         self.watch_tree.pack(fill="both", expand=True)
         self.watch_tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
+        self._build_diagnosis_tab()
         self._build_movers_tab()
         self._build_market_directory_tab()
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
@@ -1012,6 +1030,142 @@ class SignalMonitorApp:
         dialog.grab_set()
         dialog.focus_force()
         return dialog
+
+    def _build_diagnosis_tab(self) -> None:
+        self.diagnosis_card = ttk.Frame(self.notebook, style="Card.TFrame", padding=10)
+        self.notebook.add(self.diagnosis_card, text="持仓诊断")
+        ttk.Label(
+            self.diagnosis_card,
+            text=DIAGNOSIS_DISCLAIMER,
+            style="Hint.TLabel",
+            wraplength=960,
+        ).pack(anchor="w", pady=(0, 6))
+        ttk.Label(self.diagnosis_card, textvariable=self.diagnosis_notes_var, wraplength=960).pack(anchor="w", pady=(0, 8))
+        columns = ("symbol", "mode", "trend", "source", "recommended", "confidence", "stop", "risk", "weight")
+        self.diagnosis_tree = ttk.Treeview(
+            self.diagnosis_card, columns=columns, show="tree headings", selectmode="browse", height=14
+        )
+        headings = {
+            "symbol": "股票", "mode": "模式", "trend": "趋势", "source": "亏损来源",
+            "recommended": "推荐方案", "confidence": "置信度", "stop": "保护线",
+            "risk": "持有风险", "weight": "仓位%",
+        }
+        self.diagnosis_tree.heading("#0", text="展开方案")
+        self.diagnosis_tree.column("#0", width=90, anchor="w")
+        for column in columns:
+            self.diagnosis_tree.heading(column, text=headings[column])
+            self.diagnosis_tree.column(column, width=100 if column != "recommended" else 140, anchor="center")
+        yscroll = ttk.Scrollbar(self.diagnosis_card, orient="vertical", command=self.diagnosis_tree.yview)
+        self.diagnosis_tree.configure(yscrollcommand=yscroll.set)
+        self.diagnosis_tree.pack(side="left", fill="both", expand=True)
+        yscroll.pack(side="right", fill="y")
+        self.diagnosis_detail = tk.Text(self.diagnosis_card, height=12, wrap="word", relief="flat")
+        self.diagnosis_detail.pack(fill="x", pady=(8, 0))
+        self.diagnosis_detail.configure(state="disabled")
+        self.diagnosis_tree.bind("<<TreeviewSelect>>", self._on_diagnosis_select)
+        ttk.Button(self.diagnosis_card, text="复制规则原文", command=self._copy_diagnosis_text).pack(anchor="e", pady=(6, 0))
+
+    def _diagnosis_settings(self) -> DiagnosisSettings:
+        account_value, _portfolio, _available = self._probability_account_context()
+        risk = dict(self.risk_settings, account_value=account_value)
+        return DiagnosisSettings.from_configs(risk, self.monitor_settings)
+
+    def _refresh_holding_diagnoses(self) -> None:
+        metrics: dict[str, HoldingMetrics] = {}
+        for symbol, values in self.levels.items():
+            item = HoldingMetrics.from_values(values)
+            if item is not None:
+                metrics[symbol] = item
+        if not any(float(pos.get("quantity") or 0) > 0 for pos in self.positions.values()):
+            self.diagnoses = {}
+            self.portfolio_diagnosis = None
+            self.diagnosis_notes_var.set("持仓诊断：暂无持仓")
+            self._render_diagnosis_tree()
+            return
+        net = self.account_summary.get("NetLiquidation")
+        gross = self.account_summary.get("GrossPositionValue")
+        portfolio = diagnose_portfolio(
+            self.positions,
+            metrics,
+            self._diagnosis_settings(),
+            benchmark_symbol=str(self.monitor_settings.get("benchmark_symbol") or "SPY").upper(),
+            net_liquidation=float(net) if isinstance(net, (int, float)) else None,
+            gross_position_value=float(gross) if isinstance(gross, (int, float)) else None,
+        )
+        self.portfolio_diagnosis = portfolio
+        self.diagnoses = {item.symbol: item for item in portfolio.holdings}
+        notes = "；".join(portfolio.notes[:3]) if portfolio.notes else "暂无组合提示"
+        leverage = f"杠杆 {portfolio.leverage_pct:.0f}% · " if portfolio.leverage_pct else ""
+        non_sell = next((item.non_sell_summary for item in portfolio.holdings if item.non_sell_summary), "")
+        suffix = f" · 若不卖出示例：{non_sell}" if non_sell else ""
+        self.diagnosis_notes_var.set(f"持仓诊断：{leverage}{notes}{suffix}")
+        self._render_diagnosis_tree()
+
+    def _render_diagnosis_tree(self) -> None:
+        tree = self.diagnosis_tree
+        selected = tree.selection()
+        selected_id = selected[0] if selected else None
+        for item in tree.get_children():
+            tree.delete(item)
+        for diagnosis in sorted(self.diagnoses.values(), key=lambda item: (-item.weight_pct, item.symbol)):
+            parent = tree.insert(
+                "", "end", iid=diagnosis.symbol,
+                text="方案",
+                values=(
+                    diagnosis.symbol,
+                    "亏损" if diagnosis.mode == "loss" else "浮盈",
+                    diagnosis.trend_label,
+                    diagnosis.loss_source_label,
+                    diagnosis.recommended_plan.name,
+                    diagnosis.confidence,
+                    f"${diagnosis.stop:,.2f}",
+                    f"${diagnosis.hold_risk:,.0f}",
+                    f"{diagnosis.weight_pct:.1f}%",
+                ),
+            )
+            for plan in diagnosis.plans:
+                child_id = f"{diagnosis.symbol}::{plan.id}"
+                tree.insert(
+                    parent, "end", iid=child_id, text=plan.name,
+                    values=(
+                        diagnosis.symbol,
+                        "可用" if plan.allowed else "禁用",
+                        f"评分 {plan.score}" if plan.allowed else "—",
+                        plan.action,
+                        plan.name,
+                        "★" if plan.id == diagnosis.recommended else "",
+                        f"${plan.price:,.2f}" if plan.price is not None else "—",
+                        f"${plan.worst_loss:,.0f}" if plan.allowed else plan.blocked_reason[:24],
+                        f"{plan.budget_pct:.0f}%" if plan.allowed else "—",
+                    ),
+                )
+        if selected_id and tree.exists(selected_id):
+            tree.selection_set(selected_id)
+            tree.see(selected_id)
+
+    def _on_diagnosis_select(self, _event=None) -> None:
+        selection = self.diagnosis_tree.selection()
+        text = DIAGNOSIS_DISCLAIMER
+        if selection:
+            iid = selection[0]
+            symbol = iid.split("::", 1)[0]
+            diagnosis = self.diagnoses.get(symbol)
+            if diagnosis is not None:
+                text = explain_diagnosis(diagnosis)
+                if self.portfolio_diagnosis and self.portfolio_diagnosis.notes:
+                    text += "\n\n【组合提示】\n" + "\n".join(f"· {note}" for note in self.portfolio_diagnosis.notes)
+        self.diagnosis_detail.configure(state="normal")
+        self.diagnosis_detail.delete("1.0", "end")
+        self.diagnosis_detail.insert("1.0", text)
+        self.diagnosis_detail.configure(state="disabled")
+
+    def _copy_diagnosis_text(self) -> None:
+        text = self.diagnosis_detail.get("1.0", "end").strip()
+        if not text:
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self._append_log("已复制持仓诊断原文。")
 
     def _build_movers_tab(self) -> None:
         self.movers_card = ttk.Frame(self.notebook, style="Card.TFrame", padding=10)
@@ -1891,11 +2045,13 @@ class SignalMonitorApp:
         if quantity == 0:
             self.positions.pop(symbol, None)
         else:
+            old_adds = int(float(old.get("average_down_count") or 0)) if old else 0
             self.positions[symbol] = {
                 "avg_cost": avg_cost,
                 "quantity": quantity,
                 "initial_stop": initial_stop,
                 "risk_reference_price": reference if initial_stop is not None else None,
+                "average_down_count": old_adds,
             }
         write_positions(self.positions)
         self._apply_scope()
@@ -1953,8 +2109,9 @@ class SignalMonitorApp:
         adaptive = bool(self.monitor_settings.get("volatility_adaptive_lookback"))
         symbols = self.symbols.copy()
         benchmark = str(self.monitor_settings.get("benchmark_symbol") or "SPY").upper()
-        if self.monitor_settings.get("filter_relative_strength_enabled") and benchmark not in symbols:
-            symbols.append(benchmark)
+        for aux in diagnosis_context_symbols(self.positions, benchmark):
+            if aux not in symbols:
+                symbols.append(aux)
 
         if provider == "Alpaca IEX":
             api_key = os.getenv("ALPACA_API_KEY", "").strip()
@@ -2157,6 +2314,9 @@ class SignalMonitorApp:
         self.quote_times[symbol] = timestamp
         self.last_market_event_at = time.monotonic()
         self.restart_attempts = 0
+        if symbol not in self.symbols:
+            self._refresh_holding_diagnoses()
+            return
         self._render_row(symbol, float(enriched["price"]), timestamp)
         if enriched["status"] in {"BUY_ALERT", "SELL_ALERT"}:
             self._trigger_alert(symbol, enriched)
@@ -2168,6 +2328,11 @@ class SignalMonitorApp:
         self.quote_times[symbol] = timestamp
         self.last_market_event_at = time.monotonic()
         self.restart_attempts = 0
+        if symbol not in self.symbols:
+            values["price"] = price
+            self.levels[symbol] = self._enrich_values(symbol, values)
+            self._refresh_holding_diagnoses()
+            return
         old_status = str(values["status"])
         signal_ready = bool(values.get("signal_ready", True))
         if not signal_ready:
@@ -2335,6 +2500,7 @@ class SignalMonitorApp:
             )
         self._refresh_watchlist()
         self._refresh_portfolio_summary()
+        self._refresh_holding_diagnoses()
         self._sync_selected_price_styles()
 
     def _sync_selected_price_styles(self, _event=None) -> None:

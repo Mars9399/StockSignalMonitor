@@ -1,4 +1,5 @@
 import Foundation
+import StockSignalCore
 
 enum PresentationSignalStatus: String, Codable, CaseIterable, Sendable {
     case loading
@@ -61,6 +62,9 @@ struct SignalPresentation: Identifiable, Hashable, Sendable {
     var reduceProbabilityLabel: String
     var updatedAt: Date?
     var historyDays: Int
+    /// Rule-based holding diagnosis (nil when no long position / no metrics).
+    var diagnosis: HoldingDiagnosis?
+    var portfolioNotes: [String] = []
 
     static func placeholder(symbol: String) -> Self {
         .init(
@@ -79,7 +83,9 @@ struct SignalPresentation: Identifiable, Hashable, Sendable {
             buyProbabilityLabel: "等待",
             reduceProbabilityLabel: "等待",
             updatedAt: nil,
-            historyDays: 0
+            historyDays: 0,
+            diagnosis: nil,
+            portfolioNotes: []
         )
     }
 }
