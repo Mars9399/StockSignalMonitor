@@ -16,4 +16,7 @@ protocol MonitoringBackend: AnyObject {
     ) async throws -> AsyncStream<MonitorUpdate>
 
     func stop()
+
+    /// Optional live account values for leverage-aware holding diagnosis.
+    func setAccountContext(netLiquidation: Double?, grossPositionValue: Double?)
 }

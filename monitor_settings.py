@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from holding_diagnosis import DEFAULT_DIAGNOSIS_SETTINGS
+
 
 DEFAULT_MONITOR_SETTINGS = {
     # P0: optional primary-signal filters (all off by default)
@@ -26,6 +28,8 @@ DEFAULT_MONITOR_SETTINGS = {
     "show_feed_profile": True,
     # Benchmark for relative strength
     "benchmark_symbol": "SPY",
+    # Holding diagnosis engine (rule-based, read-only)
+    **DEFAULT_DIAGNOSIS_SETTINGS,
 }
 
 
