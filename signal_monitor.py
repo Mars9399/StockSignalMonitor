@@ -237,7 +237,28 @@ def save_state(state: dict[str, str]) -> None:
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def calculate_levels(df: pd.DataFrame, live_price: float) -> dict[str, float | str]:
+def _adaptive_lookback(true_range: pd.Series, history_days: int, base: int = SIGNAL_LOOKBACK_DAYS) -> int:
+    """Widen lookback when recent ATR is elevated vs its own median."""
+    if history_days < MIN_SIGNAL_HISTORY_DAYS or true_range.empty:
+        return base
+    recent = float(true_range.tail(min(14, history_days)).mean())
+    baseline = float(true_range.tail(min(60, history_days)).median())
+    if not math.isfinite(recent) or not math.isfinite(baseline) or baseline <= 0:
+        return base
+    ratio = recent / baseline
+    if ratio >= 1.35:
+        return min(20, base + 5)
+    if ratio <= 0.75:
+        return max(5, base - 3)
+    return base
+
+
+def calculate_levels(
+    df: pd.DataFrame,
+    live_price: float,
+    *,
+    adaptive_lookback: bool = False,
+) -> dict[str, float | str | bool | int]:
     required = {"high", "low", "close"}
     if not required.issubset(df.columns):
         raise ValueError("历史数据缺少 high、low 或 close 列")
@@ -267,11 +288,17 @@ def calculate_levels(df: pd.DataFrame, live_price: float) -> dict[str, float | s
     atr_period = min(14, history_days)
     atr14 = float(true_range.tail(atr_period).mean())
 
+    lookback = (
+        _adaptive_lookback(true_range, history_days)
+        if adaptive_lookback
+        else SIGNAL_LOOKBACK_DAYS
+    )
+
     fast_period = min(5, history_days)
     slow_period = min(20, history_days)
     signal_ready = history_days >= MIN_SIGNAL_HISTORY_DAYS
     signal_quality = "实时价格通道" if signal_ready else "不足·仅观察"
-    signal_model = f"{SIGNAL_LOOKBACK_DAYS}日高低点"
+    signal_model = f"{lookback}日高低点" + ("·波动自适应" if adaptive_lookback and lookback != SIGNAL_LOOKBACK_DAYS else "")
 
     trend_fast = float(frame["close"].rolling(fast_period).mean().iloc[-1])
     trend_slow = float(frame["close"].rolling(slow_period).mean().iloc[-1])
@@ -300,7 +327,7 @@ def calculate_levels(df: pd.DataFrame, live_price: float) -> dict[str, float | s
         volumes = volumes[volumes > 0].tail(min(20, history_days))
         if not volumes.empty and float(volumes.mean()) > 0:
             volume_ratio = float(volumes.iloc[-1] / volumes.mean())
-    signal_window = frame.tail(min(SIGNAL_LOOKBACK_DAYS, history_days))
+    signal_window = frame.tail(min(lookback, history_days))
     buy_point = float(signal_window["high"].max()) if signal_ready else 0.0
     stop_point = float(signal_window["low"].min()) if signal_ready else 0.0
 
@@ -312,6 +339,9 @@ def calculate_levels(df: pd.DataFrame, live_price: float) -> dict[str, float | s
         status = "SELL_ALERT"
     else:
         status = "WATCH"
+
+    prev_close = float(close.iloc[-1]) if len(close) else live_price
+    day_change_pct = ((live_price / prev_close) - 1.0) * 100.0 if prev_close > 0 else 0.0
 
     return {
         "status": status,
@@ -333,6 +363,8 @@ def calculate_levels(df: pd.DataFrame, live_price: float) -> dict[str, float | s
         "signal_quality": signal_quality,
         "signal_model": signal_model,
         "signal_ready": signal_ready,
+        "lookback_days": lookback,
+        "day_change_pct": day_change_pct,
     }
 
 

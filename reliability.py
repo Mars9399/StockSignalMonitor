@@ -6,14 +6,16 @@ from zoneinfo import ZoneInfo
 NEW_YORK = ZoneInfo("America/New_York")
 
 
-def initialize_risk_baseline(position, price, atr, eligible):
+def initialize_risk_baseline(position, price, atr, eligible, atr_multiplier: float = 2.0):
     """Create a fixed current-time protection baseline once."""
+    multiple = max(0.5, float(atr_multiplier or 2.0))
+    stop = price - multiple * atr
     if (not eligible or position.get("initial_stop") is not None
             or position.get("quantity", 0) <= 0 or position.get("avg_cost", 0) <= 0
             or not math.isfinite(price) or not math.isfinite(atr) or atr <= 0
-            or price - 2 * atr <= 0):
+            or stop <= 0):
         return position
-    return dict(position, initial_stop=price - 2 * atr, risk_reference_price=price)
+    return dict(position, initial_stop=stop, risk_reference_price=price, atr_stop_multiplier=multiple)
 
 
 def observation_reason(price, timestamp, history_date, now=None, max_age_seconds=180):

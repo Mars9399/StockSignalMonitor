@@ -19,10 +19,11 @@ from signal_monitor import calculate_levels
 class ProviderWorker(threading.Thread):
     provider_label = "行情"
 
-    def __init__(self, symbols: list[str], events: queue.Queue):
+    def __init__(self, symbols: list[str], events: queue.Queue, adaptive_lookback: bool = False):
         super().__init__(daemon=True)
         self.symbols = symbols
         self.events = events
+        self.adaptive_lookback = adaptive_lookback
         self.stop_requested = threading.Event()
         self.last_emitted: dict[str, float] = {}
 
@@ -35,7 +36,11 @@ class ProviderWorker(threading.Thread):
 
     def emit_snapshot(self, symbol: str, history: pd.DataFrame, price: float, timestamp) -> None:
         normalized = history.rename(columns={column: str(column).lower() for column in history.columns})
-        values = calculate_levels(normalized, float(price))
+        values = calculate_levels(
+            normalized,
+            float(price),
+            adaptive_lookback=bool(self.adaptive_lookback),
+        )
         self.events.put(("snapshot", symbol, values, timestamp))
 
     def stop(self) -> None:
@@ -45,8 +50,15 @@ class ProviderWorker(threading.Thread):
 class AlpacaWorker(ProviderWorker):
     provider_label = "Alpaca IEX"
 
-    def __init__(self, api_key: str, api_secret: str, symbols: list[str], events: queue.Queue):
-        super().__init__(symbols, events)
+    def __init__(
+        self,
+        api_key: str,
+        api_secret: str,
+        symbols: list[str],
+        events: queue.Queue,
+        adaptive_lookback: bool = False,
+    ):
+        super().__init__(symbols, events, adaptive_lookback=adaptive_lookback)
         self.api_key = api_key
         self.api_secret = api_secret
         self.stream = None
@@ -109,8 +121,8 @@ class AlpacaWorker(ProviderWorker):
 class YahooWorker(ProviderWorker):
     provider_label = "Yahoo Finance"
 
-    def __init__(self, symbols: list[str], events: queue.Queue):
-        super().__init__(symbols, events)
+    def __init__(self, symbols: list[str], events: queue.Queue, adaptive_lookback: bool = False):
+        super().__init__(symbols, events, adaptive_lookback=adaptive_lookback)
         self.stream = None
 
     def run(self) -> None:
@@ -177,8 +189,15 @@ class YahooWorker(ProviderWorker):
 class MassiveWorker(ProviderWorker):
     provider_label = "Massive / Polygon"
 
-    def __init__(self, api_key: str, delayed: bool, symbols: list[str], events: queue.Queue):
-        super().__init__(symbols, events)
+    def __init__(
+        self,
+        api_key: str,
+        delayed: bool,
+        symbols: list[str],
+        events: queue.Queue,
+        adaptive_lookback: bool = False,
+    ):
+        super().__init__(symbols, events, adaptive_lookback=adaptive_lookback)
         self.api_key = api_key
         self.delayed = delayed
         self.stream = None
@@ -242,8 +261,17 @@ class MassiveWorker(ProviderWorker):
 class IBKRWorker(ProviderWorker):
     provider_label = "IBKR Gateway"
 
-    def __init__(self, host: str, port: int, client_id: int, market_data_type: int, symbols: list[str], events: queue.Queue):
-        super().__init__(symbols, events)
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        client_id: int,
+        market_data_type: int,
+        symbols: list[str],
+        events: queue.Queue,
+        adaptive_lookback: bool = False,
+    ):
+        super().__init__(symbols, events, adaptive_lookback=adaptive_lookback)
         self.host = host
         self.port = port
         self.client_id = client_id
